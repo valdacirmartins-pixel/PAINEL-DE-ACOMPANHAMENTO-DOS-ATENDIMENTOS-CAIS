@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.db
+.env
+.venv/
+venv/
+.idea/
+.vscode/
+
+# Bases e arquivos importados podem conter dados pessoais.
+data/
+uploads/
+outputs/
+
+*.csv
+*.xls
+*.xlsx
+*.html
+*.htm
+*.zip
