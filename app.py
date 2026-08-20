@@ -68,9 +68,18 @@ if bool(APP_USERNAME) != bool(APP_PASSWORD):
         "Defina APP_USERNAME e APP_PASSWORD juntos para ativar a proteção de acesso."
     )
 
+
+@server.route("/health")
+def healthcheck():
+    return "ok", 200
+
+
 if APP_USERNAME and APP_PASSWORD:
     @server.before_request
     def exigir_autenticacao():
+        if request.path == "/health":
+            return None
+
         autenticacao = request.authorization
         usuario_valido = (
             autenticacao
