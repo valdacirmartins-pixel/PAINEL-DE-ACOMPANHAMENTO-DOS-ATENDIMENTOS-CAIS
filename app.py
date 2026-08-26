@@ -7,12 +7,13 @@ import sqlite3
 import unicodedata
 import hmac
 import hashlib
+from difflib import SequenceMatcher
 from datetime import datetime
 
 import pandas as pd
 import plotly.express as px
 
-from dash import Dash, html, dcc, dash_table, no_update
+from dash import Dash, html, dcc, dash_table, no_update, ctx
 from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
 from flask import session
@@ -41,6 +42,630 @@ PASTA_UPLOADS = os.path.join(PASTA_BASE, "uploads")
 PASTA_OUTPUTS = os.path.join(PASTA_BASE, "outputs")
 PASTA_HISTORICO = os.path.join(PASTA_DATA, "historico_importacoes")
 CAMINHO_BANCO = os.path.join(PASTA_DATA, "monitoramento_cidadania.sqlite3")
+CAMINHO_BASE_UNIDADES_MAPA = os.path.join(PASTA_DATA, "unidades_cais_mapa.json")
+
+# Cadastro geográfico inicial incorporado ao código. A aba "Mapa das Unidades"
+# permite substituir esta base por outra planilha XLSX ou CSV.
+UNIDADES_MAPA_PADRAO = json.loads(r'''
+[
+  {
+    "Região": "Centro-Oeste",
+    "UF": "DF",
+    "Nome da OSC": "INSTITUTO CULTURAL E SOCIAL NO SETOR",
+    "Nome da Unidade": "Cidadania PopRua - Casa Carinhosa",
+    "Município": "BRASILIA",
+    "Endereço": "Setor Comercial Sul Q. 5 Edifício José Haje Lote 70/74 - Asa Sul, Brasília - DF, 70305-914",
+    "Latitude": -15.796653,
+    "Longitude": -47.889251,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Centro-Oeste",
+    "UF": "DF",
+    "Nome da OSC": "INSTITUTO CULTURAL E SOCIAL NO SETOR",
+    "Nome da Unidade": "Cidadania PopRua - Casa Carinhosa",
+    "Município": "BRASILIA",
+    "Endereço": "Setor Central, C-12 Bloco F LOTE 01, Taguatingua - DF, 72010-120",
+    "Latitude": -15.816061,
+    "Longitude": -48.08081,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Centro-Oeste",
+    "UF": "GO",
+    "Nome da OSC": "SOCIEDADE INSTITUTO CURADOS PARA CURAR",
+    "Nome da Unidade": "Não definido",
+    "Município": "",
+    "Endereço": "Espaço não definido",
+    "Latitude": -15.815896,
+    "Longitude": -48.082011,
+    "Situação": "Fase de Formalização: Aguarda Pagamento do Repasse",
+    "Fase": "Em formalização",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Centro-Oeste",
+    "UF": "MT",
+    "Nome da OSC": "CENTRO DE PROMOCOES HUMANAS BOM PASTOR-MT (CENTERBOP)",
+    "Nome da Unidade": "Cidadania PopRua - Zé Bolo Flô",
+    "Município": "CUIABÁ",
+    "Endereço": "Avenida Coronel Escolástico, 362, Bairro Bandeirantes, Cuiabá - MT, 78068-450",
+    "Latitude": -15.597384,
+    "Longitude": -56.090178,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Nordeste",
+    "UF": "BA",
+    "Nome da OSC": "REDE BRASILEIRA DE REDUCAO DE DANOS E DIREITOS HUMANOS - REDUC",
+    "Nome da Unidade": "Cidadania PopRua - Casa Francisca Maria Lúcia",
+    "Município": "SALVADOR",
+    "Endereço": "Rua São Francisco, S/N, Centro Histórico, Salvador - BA, 40026-072",
+    "Latitude": -12.9750546,
+    "Longitude": -38.510526,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Nordeste",
+    "UF": "BA",
+    "Nome da OSC": "REDE BRASILEIRA DE REDUCAO DE DANOS E DIREITOS HUMANOS - REDUC",
+    "Nome da Unidade": "Não definido",
+    "Município": "SALVADOR",
+    "Endereço": "Rua Potiguares, 12, Rio Vermelho, Salvador - BA, 41940-100",
+    "Latitude": -13.012489,
+    "Longitude": -38.487948,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Nordeste",
+    "UF": "BA",
+    "Nome da OSC": "REDE BRASILEIRA DE REDUCAO DE DANOS E DIREITOS HUMANOS - REDUC",
+    "Nome da Unidade": "Não definido",
+    "Município": "SALVADOR",
+    "Endereço": "Rua Moreira de Pinho, 9, Canela, Salvador - BA, 40110-090",
+    "Latitude": null,
+    "Longitude": null,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Não"
+  },
+  {
+    "Região": "Nordeste",
+    "UF": "BA",
+    "Nome da OSC": "ASSOCIACAO CASA DE MARTA E MARIA",
+    "Nome da Unidade": "Cidadania PopRua - Subúrbio Ferroviário",
+    "Município": "SALVADOR",
+    "Endereço": "R. Jaime Viêira Lima, 61 - São João do Cabrito, Salvador - BA, 40491-170",
+    "Latitude": -12.902765,
+    "Longitude": -38.477702,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Nordeste",
+    "UF": "BA",
+    "Nome da OSC": "ASSOCIACAO CASA DE MARTA E MARIA",
+    "Nome da Unidade": "Cidadania PopRua - Cidade Baixa",
+    "Município": "SALVADOR",
+    "Endereço": "Av. Dendezeiros do Bonfim, 154 - Bonfim, Salvador - BA, 40444-130",
+    "Latitude": -12.928878,
+    "Longitude": -38.507605,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Nordeste",
+    "UF": "BA",
+    "Nome da OSC": "ASSOCIACAO CASA DE MARTA E MARIA",
+    "Nome da Unidade": "Cidadania PopRua - São Cristóvão/Itapuã",
+    "Município": "SALVADOR",
+    "Endereço": "Avenida Dorival Caymmi, 4 - Itapuã, Salvador - BA, 41635-150",
+    "Latitude": -12.934016,
+    "Longitude": -38.35924,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Nordeste",
+    "UF": "AL",
+    "Nome da OSC": "ASSOCIACAO DE DESENVOLVIMENTO E ESTRATEGIAS SOCIAIS - (ADES)",
+    "Nome da Unidade": "Cidadania PopRua - Espaço ADES Luiz Sofia",
+    "Município": "MACEIÓ",
+    "Endereço": "Rua Costa Leite, 53, Centro, Maceió - AL, 57020-540",
+    "Latitude": -9.668103,
+    "Longitude": -35.731679,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Nordeste",
+    "UF": "PI",
+    "Nome da OSC": "ASSOCIACAO BENEFICENTE SAO PAULO APOSTOLO (ABESPA)",
+    "Nome da Unidade": "Cidadania PopRua - Santo Aleixo",
+    "Município": "TERESINA",
+    "Endereço": "Rua Arlindo Nogueira, 2531, Macauba, Teresina - PI, 64002-390",
+    "Latitude": -5.110154,
+    "Longitude": -42.799275,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Nordeste",
+    "UF": "CE",
+    "Nome da OSC": "ASSOCIACAO BENEFICENTE DOS MORAD DO PARQUE UNIVERSITARIO",
+    "Nome da Unidade": "Não definido",
+    "Município": "",
+    "Endereço": "Espaço não definido",
+    "Latitude": null,
+    "Longitude": null,
+    "Situação": "Fase de Formalização: Aguarda Pagamento do Repasse",
+    "Fase": "Em formalização",
+    "Alias adicional": "",
+    "Mapeável": "Não"
+  },
+  {
+    "Região": "Nordeste",
+    "UF": "MA",
+    "Nome da OSC": "INSTITUTO DE GESTAO DE PROJETOS SOCIAIS (IGPS)",
+    "Nome da Unidade": "Cidadania PopRua - Apaon - Açu",
+    "Município": "SÃO LUÍS",
+    "Endereço": "Rua do Egito, 196, Centro, São Luís - MA, 65010-190",
+    "Latitude": -2.527219,
+    "Longitude": -44.303363,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Nordeste",
+    "UF": "SE",
+    "Nome da OSC": "UNIVERSIDADE FEDERAL DE SERGIPE (UFS)",
+    "Nome da Unidade": "Não definido",
+    "Município": "ARACAJU",
+    "Endereço": "Av. João Rodrigues, 425, Industrial, Aracaju - SE, 49065-450",
+    "Latitude": -10.896383,
+    "Longitude": -37.05121,
+    "Situação": "Fase de Formalização: Aguarda Pagamento do Repasse",
+    "Fase": "Em formalização",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Norte",
+    "UF": "PA",
+    "Nome da OSC": "INSTITUTO PEDRO VIEIRA",
+    "Nome da Unidade": "Cidadania PopRua - Casa Irmã Henriqueta",
+    "Município": "BELÉM",
+    "Endereço": "Tr. Três de Maio, 2389 - Cremação, Belém - PA, 66023-720",
+    "Latitude": -1.461093,
+    "Longitude": -48.473506,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Norte",
+    "UF": "PA",
+    "Nome da OSC": "INSTITUTO SABER",
+    "Nome da Unidade": "Não possui",
+    "Município": "BELÉM",
+    "Endereço": "Av. Tamandaré, 245 - Cidade Velha, Belém - PA, 66020-000",
+    "Latitude": -1.460313,
+    "Longitude": -48.502493,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Norte",
+    "UF": "RR",
+    "Nome da OSC": "INSTITUTO CONVIVA",
+    "Nome da Unidade": "Cidadania Pop Rua - Papa Franscico",
+    "Município": "BOA VISTA",
+    "Endereço": "Rua Inacio Magalhães, 31, Centro, Boa Vista - RR, 69301-320 (de frente com a Igreja Matriz de Nossa Senhora do Carmo)",
+    "Latitude": 2.815572,
+    "Longitude": -60.667916,
+    "Situação": "Fase de Formalização: Pendente Assinatura do Termo",
+    "Fase": "Em formalização",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Norte",
+    "UF": "RR",
+    "Nome da OSC": "INSTITUTO CONVIVA",
+    "Nome da Unidade": "Cidadania Pop - 13 de Setembro",
+    "Município": "BOA VISTA",
+    "Endereço": "Rua do Buritis, 605, Treze de Setembro, Boa Vista - RR, 69308-070",
+    "Latitude": 2.795757,
+    "Longitude": -60.681345,
+    "Situação": "Fase de Formalização: Pendente Assinatura do Termo",
+    "Fase": "Em formalização",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Norte",
+    "UF": "AM",
+    "Nome da OSC": "ASSOCIACAO DE REDUCAO DE DANOS DO AMAZONAS - ARDAM",
+    "Nome da Unidade": "Não definido",
+    "Município": "",
+    "Endereço": "Espaço não definido",
+    "Latitude": null,
+    "Longitude": null,
+    "Situação": "Fase de Formalização: Pendente Assinatura do Termo",
+    "Fase": "Em formalização",
+    "Alias adicional": "",
+    "Mapeável": "Não"
+  },
+  {
+    "Região": "Norte",
+    "UF": "AC",
+    "Nome da OSC": "UNIVERSIDADE FEDERAL DO ACRE (UFAC)",
+    "Nome da Unidade": "Não definido",
+    "Município": "",
+    "Endereço": "Espaço não definido",
+    "Latitude": null,
+    "Longitude": null,
+    "Situação": "Fase de Formalização: Aguarda Pagamento do Repasse",
+    "Fase": "Em formalização",
+    "Alias adicional": "",
+    "Mapeável": "Não"
+  },
+  {
+    "Região": "Norte",
+    "UF": "TO",
+    "Nome da OSC": "UNIVERSIDADE FEDERAL DO TOCANTINS (UFT)",
+    "Nome da Unidade": "Cidadania PopRua - Espaço Aroeira",
+    "Município": "PALMAS",
+    "Endereço": "Quadra 302 Norte, Av. Siqueira Campos, Plano Diretor Norte, Palmas - TO, 77006-332",
+    "Latitude": -10.16757,
+    "Longitude": -48.329999,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "MG",
+    "Nome da OSC": "INSTITUTO FEDERAL DE EDUCAÇÃO, CIÊNCIA E TECNOLOGIA DE MINAS GERAIS - IFMG",
+    "Nome da Unidade": "Cidadania PopRua - Anyky Lima",
+    "Município": "BELO HORIZONTE",
+    "Endereço": "Avenida Mem de Sá, 643, Santa Efigênia, Belo Horizonte - MG, 30260-270",
+    "Latitude": -19.922699,
+    "Longitude": -43.911119,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "MG",
+    "Nome da OSC": "INSTITUTO FEDERAL DE EDUCAÇÃO, CIÊNCIA E TECNOLOGIA DE MINAS GERAIS - IFMG",
+    "Nome da Unidade": "Cidadania PopRua - Sissy Kelly",
+    "Município": "BELO HORIZONTE",
+    "Endereço": "Rua Rio Grande do Norte, 205, Santa Efigênia, Belo Horizonte - MG, 30130-130",
+    "Latitude": -19.927147,
+    "Longitude": -43.929684,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "SP",
+    "Nome da OSC": "ASSOCIACAO REDE RUA",
+    "Nome da Unidade": "Cidadania PopRua - Chapelaria Social Irmã Alberta",
+    "Município": "SÃO PAULO",
+    "Endereço": "Rua Campos Sales, 88 - Brás, São Paulo - SP, 03041-090",
+    "Latitude": -23.549405,
+    "Longitude": -46.619501,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento Parcial",
+    "Fase": "Em funcionamento parcial",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "SP",
+    "Nome da OSC": "ASSOCIACAO REDE RUA",
+    "Nome da Unidade": "Cidadania PopRua - Chapelaria Social Regina e Ivete",
+    "Município": "SÃO PAULO",
+    "Endereço": "Av. Mário Lopes Leão, 680 - Santo Amaro - São Paulo - SP, 04754-010",
+    "Latitude": -23.651277,
+    "Longitude": -46.712257,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento Parcial",
+    "Fase": "Em funcionamento parcial",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "SP",
+    "Nome da OSC": "INSTITUTO BECEI",
+    "Nome da Unidade": "Cidadania PopRua – SOS Rua",
+    "Município": "SÃO PAULO",
+    "Endereço": "Rua Alfredo Pujol, 340, Santana, São Paulo - SP, 02017-000",
+    "Latitude": -23.499902,
+    "Longitude": -46.629115,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "SP",
+    "Nome da OSC": "INSTITUTO BECEI",
+    "Nome da Unidade": "Cidadania PopRua - Carlinhos Arquino",
+    "Município": "SÃO PAULO",
+    "Endereço": "Rua da Glória, 893, Liberdade, São Paulo - SP, 01506-000",
+    "Latitude": -23.559846,
+    "Longitude": -46.632143,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "SP",
+    "Nome da OSC": "CENTRO DE CONVIVENCIA E DE LEI",
+    "Nome da Unidade": "Não definido",
+    "Município": "SÃO PAULO",
+    "Endereço": "Avenida Dr. Gastão Vidigal, 2000, Vila Leopoldina, São Paulo - SP, 05314-000",
+    "Latitude": -23.534184,
+    "Longitude": -46.734364,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "SP",
+    "Nome da OSC": "CASA NEON CUNHA",
+    "Nome da Unidade": "Cidadania PopRua - Amanda Marfree",
+    "Município": "SÃO PAULO",
+    "Endereço": "Rua Almirante Lobo, 504, Ipiranga, São Paulo - SP, 04212-000",
+    "Latitude": -23.590526,
+    "Longitude": -46.604361,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "SP",
+    "Nome da OSC": "ORGANIZACAO SOCIAL IDENTIDADE PERIFERICA",
+    "Nome da Unidade": "Não definido",
+    "Município": "SÃO PAULO",
+    "Endereço": "Espaço não definido",
+    "Latitude": null,
+    "Longitude": null,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Não"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "ES",
+    "Nome da OSC": "ASSOCIACAO GRUPO ORGULHO LIBERDADE E DIGNIDADE-GOLD",
+    "Nome da Unidade": "Não definido",
+    "Município": "VITÓRIA",
+    "Endereço": "Rua Cosme Rolim, 05, Centro, Vitória - ES, 29015-050",
+    "Latitude": -20.320019,
+    "Longitude": -40.339572,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "RJ",
+    "Nome da OSC": "UNIVERSIDADE FEDERAL DO RIO DE JANEIRO (UFRJ)",
+    "Nome da Unidade": "Cidadania PopRua Centro 2- Espaço 19 de agosto",
+    "Município": "RIO DE JANEIRO",
+    "Endereço": "R. Camerino, 34 - Gamboa, Rio de Janeiro - RJ, 20080-009",
+    "Latitude": -22.898349,
+    "Longitude": -43.187822,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "RJ",
+    "Nome da OSC": "UNIVERSIDADE FEDERAL DO RIO DE JANEIRO (UFRJ)",
+    "Nome da Unidade": "Cidadania PopRua Centro 1 - Espaço da Diversidade",
+    "Município": "RIO DE JANEIRO",
+    "Endereço": "R. Sacadura Cabral, 379 - Saúde, Rio de Janeiro - RJ, 20221-160",
+    "Latitude": -22.894582,
+    "Longitude": -43.192538,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "RJ",
+    "Nome da OSC": "UNIVERSIDADE FEDERAL DO RIO DE JANEIRO (UFRJ)",
+    "Nome da Unidade": "Cidadania PopRua - Espaço da Dignidade",
+    "Município": "RIO DE JANEIRO",
+    "Endereço": "Travessa Almerinda Freitas, 38 Madureira, Rio de Janeiro - RJ, 21350-280",
+    "Latitude": -22.2875786,
+    "Longitude": -43.336296,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento Parcial",
+    "Fase": "Em funcionamento parcial",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sudeste",
+    "UF": "RJ",
+    "Nome da OSC": "UNIVERSIDADE FEDERAL DO RIO DE JANEIRO (UFRJ)",
+    "Nome da Unidade": "Cidadania PopRua - Espaço Vozes da Rua",
+    "Município": "RIO DE JANEIRO",
+    "Endereço": "Av. Brás de Pina, 24 - Penha, Rio de Janeiro - RJ, 21070-031",
+    "Latitude": -22.839725,
+    "Longitude": -43.28227,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sul",
+    "UF": "PR",
+    "Nome da OSC": "ASSOCIACAO MAOS INVISIVEIS",
+    "Nome da Unidade": "Cidadania PopRua - Casa da Vó",
+    "Município": "CURITIBA",
+    "Endereço": "Av. Jaime Reis, 216, Centro Histórico, Curitiba - PR, 80510-010",
+    "Latitude": -25.427039,
+    "Longitude": -49.274326,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sul",
+    "UF": "PR",
+    "Nome da OSC": "ASSOCIACAO DE DESENVOLVIMENTO HUMANO E FOMENTO CULTURAL (NUCLEO PERIFERICO)",
+    "Nome da Unidade": "Não definido",
+    "Município": "CURITIBA",
+    "Endereço": "Espaço não definido",
+    "Latitude": null,
+    "Longitude": null,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Não"
+  },
+  {
+    "Região": "Sul",
+    "UF": "RS",
+    "Nome da OSC": "FUNDACAO SOLIDARIEDADE DE FORMACAO E CAPACITACAO DE TRABALHADORES",
+    "Nome da Unidade": "Cidadania PopRua - Casa Maribel Teresinha Padilha",
+    "Município": "PORTO ALEGRE",
+    "Endereço": "Rua Comendador Coruja, 350, Floresta, Porto Alegre - RS, 90220-180",
+    "Latitude": -30.024491,
+    "Longitude": -51.212931,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sul",
+    "UF": "RS",
+    "Nome da OSC": "FUNDACAO SOLIDARIEDADE DE FORMACAO E CAPACITACAO DE TRABALHADORES",
+    "Nome da Unidade": "Cidadania PopRua - Casa Rodrigo da Silva Veloso",
+    "Município": "PORTO ALEGRE",
+    "Endereço": "Rua General Caldwell, 1196, Menino de Deus, Porto Alegre - RS, 90130-051",
+    "Latitude": -30.051291,
+    "Longitude": -51.215415,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sul",
+    "UF": "RS",
+    "Nome da OSC": "FUNDACAO SOLIDARIEDADE DE FORMACAO E CAPACITACAO DE TRABALHADORES",
+    "Nome da Unidade": "Cidadania PopRua - Casa Rita de Cássia Pereira de Sousa",
+    "Município": "PORTO ALEGRE",
+    "Endereço": "Av. Dr João Simplício Alves de Carvalho, 84 , Vila Ipiranga , Porto Alegre - RS, 91360-260",
+    "Latitude": -30.019599,
+    "Longitude": -51.15302,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sul",
+    "UF": "SC",
+    "Nome da OSC": "CARITAS BRASILEIRA (SC)",
+    "Nome da Unidade": "Cidadania PopRua - Aline Silva de Salles",
+    "Município": "FLORIANÓPOLIS",
+    "Endereço": "Rua João Pinto, 189, Centro, Florianópolis - SC, 88010-420",
+    "Latitude": -27.59928,
+    "Longitude": -48.548817,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sul",
+    "UF": "SC",
+    "Nome da OSC": "CARITAS BRASILEIRA (SC)",
+    "Nome da Unidade": "Cidadania PopRua - Celso Luiz Pereira",
+    "Município": "FLORIANÓPOLIS",
+    "Endereço": "Rua Mauro de Carvalho, SN, Monte Cristo, Florianópolis - SC, 88090-600",
+    "Latitude": -27.591341,
+    "Longitude": -48.603268,
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  },
+  {
+    "Região": "Sul",
+    "UF": "PR",
+    "Nome da OSC": "INSTITUTO NACIONAL DE DIREITOS HUMANOS DA POPULACAO DE RUA INRUA",
+    "Nome da Unidade": "Cidadania PopRua - Jamaica",
+    "Município": "CURITIBA",
+    "Endereço": "Rua Embaixador Hipólito de Araújo, 22, Rebouças - PR, 80215-050",
+    "Latitude": -25.441644,
+    "Longitude": -49.254011,
+    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
+    "Fase": "Em implantação",
+    "Alias adicional": "",
+    "Mapeável": "Sim"
+  }
+]
+''')
 
 for pasta in [
     PASTA_ASSETS,
@@ -391,7 +1016,13 @@ def localizar_colunas(df):
         "status": mapa.get("status do atendimento"),
         "criado": mapa.get("criado em"),
         "atualizado": mapa.get("atualizado em"),
-        "unidade": mapa.get("atendido em"),
+        "unidade": (
+            mapa.get("atendido em")
+            or mapa.get("unidade / osc")
+            or mapa.get("unidade/osc")
+            or mapa.get("nome da unidade")
+            or mapa.get("nome da osc")
+        ),
         "usuario": mapa.get("atendido por"),
     }
 
@@ -1173,6 +1804,491 @@ def normalizar_texto(texto):
     )
 
     return texto
+
+
+# ============================================================
+# FUNÇÕES - MAPA DAS UNIDADES
+# ============================================================
+
+COLUNAS_UNIDADES_MAPA = [
+    "Região",
+    "UF",
+    "Nome da OSC",
+    "Nome da Unidade",
+    "Município",
+    "Endereço",
+    "Latitude",
+    "Longitude",
+    "Situação",
+    "Fase",
+    "Alias adicional",
+    "Mapeável",
+]
+
+LIMITES_LATITUDE_UF = {
+    "AC": (-12.0, -7.0), "AL": (-10.5, -8.5), "AM": (-10.0, 2.0),
+    "AP": (-1.5, 4.5), "BA": (-19.0, -8.0), "CE": (-8.0, -2.5),
+    "DF": (-16.2, -15.3), "ES": (-21.5, -17.5), "GO": (-19.5, -12.5),
+    "MA": (-10.5, -1.0), "MG": (-23.0, -14.0), "MS": (-24.5, -17.0),
+    "MT": (-18.5, -7.0), "PA": (-10.0, 2.5), "PB": (-8.5, -6.0),
+    "PE": (-9.5, -7.0), "PI": (-11.0, -2.5), "PR": (-27.0, -22.5),
+    "RJ": (-23.5, -20.0), "RN": (-7.0, -4.5), "RO": (-13.5, -7.5),
+    "RR": (0.0, 5.5), "RS": (-34.0, -27.0), "SC": (-29.5, -25.5),
+    "SE": (-11.7, -9.5), "SP": (-25.5, -19.5), "TO": (-13.5, -5.0),
+}
+
+
+def normalizar_nome_mapa(texto):
+    texto = normalizar_texto(texto)
+    texto = re.sub(r"[^a-z0-9]+", " ", texto)
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def valor_generico_mapa(texto):
+    return normalizar_nome_mapa(texto) in {
+        "",
+        "nao definido",
+        "nao possui",
+        "espaco nao definido",
+    }
+
+
+def localizar_coluna_mapa(df, *nomes):
+    mapa = {
+        normalizar_nome_mapa(coluna): coluna
+        for coluna in df.columns
+    }
+    for nome in nomes:
+        encontrada = mapa.get(normalizar_nome_mapa(nome))
+        if encontrada is not None:
+            return encontrada
+    return None
+
+
+def texto_celula_mapa(linha, coluna):
+    if coluna is None:
+        return ""
+    valor = linha.get(coluna, "")
+    if pd.isna(valor):
+        return ""
+    return re.sub(r"\s+", " ", str(valor)).strip()
+
+
+def classificar_fase_mapa(situacao):
+    texto = normalizar_nome_mapa(situacao)
+    if "operacao" in texto:
+        if "parcial" in texto:
+            return "Em funcionamento parcial"
+        return "Em funcionamento"
+    if "implantacao" in texto:
+        return "Em implantação"
+    if "formalizacao" in texto:
+        return "Em formalização"
+    return "Não informado"
+
+
+def normalizar_coordenada_mapa(valor, tipo, uf=""):
+    if valor is None or pd.isna(valor) or str(valor).strip() == "":
+        return None
+    try:
+        numero = float(str(valor).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+    if tipo == "longitude":
+        if -75 <= numero <= -32:
+            return round(numero, 7)
+        candidatos = [
+            numero / (10 ** potencia)
+            for potencia in range(3, 9)
+        ]
+        validos = [
+            candidato
+            for candidato in candidatos
+            if -75 <= candidato <= -32
+        ]
+        return round(validos[0], 7) if validos else None
+
+    minimo, maximo = LIMITES_LATITUDE_UF.get(
+        str(uf or "").strip().upper(),
+        (-34.0, 6.0),
+    )
+    if minimo <= numero <= maximo:
+        return round(numero, 7)
+    candidatos = [
+        numero / (10 ** potencia)
+        for potencia in range(3, 9)
+    ]
+    validos = [
+        candidato
+        for candidato in candidatos
+        if minimo <= candidato <= maximo
+    ]
+    if not validos:
+        return None
+    centro = (minimo + maximo) / 2
+    escolhido = min(validos, key=lambda item: abs(item - centro))
+    return round(escolhido, 7)
+
+
+def padronizar_base_unidades_mapa(df):
+    if df is None or df.empty:
+        return pd.DataFrame(columns=COLUNAS_UNIDADES_MAPA)
+
+    df = df.copy()
+    df.columns = [str(coluna).strip() for coluna in df.columns]
+
+    coluna_regiao = localizar_coluna_mapa(df, "Região", "Regiao")
+    coluna_uf = localizar_coluna_mapa(df, "UF", "Estado")
+    coluna_osc = localizar_coluna_mapa(
+        df,
+        "Nome da OSC",
+        "NOME DA OSC",
+        "OSC",
+        "Organização",
+    )
+    coluna_unidade = localizar_coluna_mapa(
+        df,
+        "Nome da Unidade",
+        "NOME FANTASIA (UNIDADE)",
+        "Unidade",
+        "Atendido Em",
+        "Unidade / OSC",
+    )
+    coluna_municipio = localizar_coluna_mapa(df, "Município", "Municipio", "Cidade")
+    coluna_endereco = localizar_coluna_mapa(
+        df,
+        "Endereço",
+        "ENDEREÇO DA UNIDADE",
+        "Endereco",
+    )
+    coluna_latitude = localizar_coluna_mapa(df, "Latitude", "LATITUDE", "Lat")
+    coluna_longitude = localizar_coluna_mapa(
+        df,
+        "Longitude",
+        "LONGITUTE",
+        "Long",
+        "Lon",
+    )
+    coluna_situacao = localizar_coluna_mapa(df, "Situação", "Situacao", "Status")
+    coluna_fase = localizar_coluna_mapa(df, "Fase")
+    coluna_alias = localizar_coluna_mapa(
+        df,
+        "Alias adicional",
+        "Alias",
+        "Nome alternativo",
+    )
+
+    if coluna_latitude is None or coluna_longitude is None:
+        raise ValueError(
+            "A planilha precisa possuir as colunas Latitude e Longitude."
+        )
+    if coluna_osc is None and coluna_unidade is None:
+        raise ValueError(
+            "A planilha precisa possuir Nome da OSC ou Nome da Unidade."
+        )
+
+    registros = []
+    regiao_atual = ""
+    uf_atual = ""
+    osc_atual = ""
+    municipio_atual = ""
+
+    for _, linha in df.iterrows():
+        regiao = texto_celula_mapa(linha, coluna_regiao)
+        uf = texto_celula_mapa(linha, coluna_uf).upper()
+        osc = texto_celula_mapa(linha, coluna_osc)
+        unidade = texto_celula_mapa(linha, coluna_unidade)
+        municipio = texto_celula_mapa(linha, coluna_municipio)
+        endereco = texto_celula_mapa(linha, coluna_endereco)
+        situacao = texto_celula_mapa(linha, coluna_situacao)
+        fase_informada = texto_celula_mapa(linha, coluna_fase)
+        alias = texto_celula_mapa(linha, coluna_alias)
+
+        if normalizar_nome_mapa(regiao).startswith("totais"):
+            continue
+
+        if regiao and regiao != regiao_atual:
+            regiao_atual = regiao
+            uf_atual = ""
+            osc_atual = ""
+            municipio_atual = ""
+        if uf and uf != uf_atual:
+            uf_atual = uf
+            osc_atual = ""
+            municipio_atual = ""
+        if osc:
+            osc_atual = osc
+        if municipio:
+            municipio_atual = municipio
+
+        latitude = normalizar_coordenada_mapa(
+            linha.get(coluna_latitude),
+            "latitude",
+            uf_atual,
+        )
+        longitude = normalizar_coordenada_mapa(
+            linha.get(coluna_longitude),
+            "longitude",
+            uf_atual,
+        )
+
+        significativo = any(
+            [
+                uf,
+                osc,
+                municipio,
+                situacao,
+                latitude is not None,
+                longitude is not None,
+                not valor_generico_mapa(unidade),
+                not valor_generico_mapa(endereco),
+            ]
+        )
+        if not significativo:
+            continue
+
+        fase = fase_informada or classificar_fase_mapa(situacao)
+        registros.append(
+            {
+                "Região": regiao_atual,
+                "UF": uf_atual,
+                "Nome da OSC": osc_atual,
+                "Nome da Unidade": unidade,
+                "Município": municipio or municipio_atual,
+                "Endereço": endereco,
+                "Latitude": latitude,
+                "Longitude": longitude,
+                "Situação": situacao,
+                "Fase": fase,
+                "Alias adicional": alias,
+                "Mapeável": (
+                    "Sim"
+                    if latitude is not None and longitude is not None
+                    else "Não"
+                ),
+            }
+        )
+
+    resultado = pd.DataFrame(registros, columns=COLUNAS_UNIDADES_MAPA)
+    if not resultado.empty:
+        resultado = resultado.drop_duplicates().reset_index(drop=True)
+    return resultado
+
+
+def carregar_base_unidades_mapa():
+    if os.path.exists(CAMINHO_BASE_UNIDADES_MAPA):
+        try:
+            with open(CAMINHO_BASE_UNIDADES_MAPA, "r", encoding="utf-8") as arquivo:
+                conteudo = arquivo.read()
+            salva = pd.read_json(io.StringIO(conteudo), orient="split")
+            return padronizar_base_unidades_mapa(salva)
+        except Exception:
+            pass
+    return padronizar_base_unidades_mapa(
+        pd.DataFrame(UNIDADES_MAPA_PADRAO)
+    )
+
+
+def salvar_base_unidades_mapa(df):
+    df.to_json(
+        CAMINHO_BASE_UNIDADES_MAPA,
+        orient="split",
+        force_ascii=False,
+        indent=2,
+    )
+
+
+def ler_base_unidades_upload(nome_arquivo, conteudo_upload):
+    extensao = str(nome_arquivo or "").lower().rsplit(".", 1)[-1]
+    if extensao not in {"xlsx", "csv"}:
+        raise ValueError("Use uma planilha XLSX ou CSV.")
+
+    if extensao == "csv":
+        return padronizar_base_unidades_mapa(
+            ler_arquivo_upload(nome_arquivo, conteudo_upload)
+        )
+
+    dados = bytes_upload(conteudo_upload)
+    abas = pd.read_excel(io.BytesIO(dados), sheet_name=None)
+    if not abas:
+        raise ValueError("Nenhuma aba foi encontrada na planilha.")
+
+    candidatas = []
+    for nome_aba, dados_aba in abas.items():
+        try:
+            preparada = padronizar_base_unidades_mapa(dados_aba)
+        except Exception:
+            continue
+        prioridade = 1 if normalizar_nome_mapa(nome_aba) == "base para o mapa" else 0
+        candidatas.append((prioridade, len(preparada), preparada))
+
+    if not candidatas:
+        raise ValueError(
+            "Não foi encontrada uma aba com nomes, latitude e longitude."
+        )
+    candidatas.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return candidatas[0][2]
+
+
+def nome_exibicao_mapa(linha):
+    unidade = str(linha.get("Nome da Unidade", "") or "").strip()
+    if not valor_generico_mapa(unidade):
+        return unidade
+    osc = str(linha.get("Nome da OSC", "") or "").strip()
+    return osc or "Unidade sem nome"
+
+
+def aliases_linha_mapa(linha):
+    valores = [
+        linha.get("Nome da OSC", ""),
+        linha.get("Nome da Unidade", ""),
+    ]
+    alias_extra = str(linha.get("Alias adicional", "") or "")
+    valores.extend(re.split(r"[|;]", alias_extra))
+    return {
+        normalizar_nome_mapa(valor)
+        for valor in valores
+        if not valor_generico_mapa(valor)
+    }
+
+
+def consolidar_atendimentos_no_mapa(base_unidades, dados_cais):
+    unidades = base_unidades.copy().reset_index(drop=True)
+    unidades["Nome para exibição"] = unidades.apply(nome_exibicao_mapa, axis=1)
+    unidades["Atendimentos CAIS"] = 0
+    unidades["Nomes reconhecidos no CAIS"] = ""
+
+    metricas = {
+        "total_atendimentos": 0,
+        "atendimentos_vinculados": 0,
+        "nomes_total": 0,
+        "nomes_vinculados": 0,
+        "nao_reconhecidos": [],
+    }
+    if not dados_cais:
+        return unidades, metricas
+
+    try:
+        atendimentos = pd.read_json(
+            io.StringIO(dados_cais),
+            orient="split",
+        )
+    except Exception:
+        return unidades, metricas
+
+    colunas = localizar_colunas(atendimentos)
+    coluna_unidade = colunas.get("unidade")
+    metricas["total_atendimentos"] = int(len(atendimentos))
+    if coluna_unidade is None:
+        return unidades, metricas
+
+    contagem = serie_texto(atendimentos, coluna_unidade)
+    contagem = contagem[contagem != ""].value_counts()
+    metricas["nomes_total"] = int(len(contagem))
+
+    indice_alias = {}
+    for indice, linha in unidades.iterrows():
+        for alias in aliases_linha_mapa(linha):
+            indice_alias.setdefault(alias, set()).add(indice)
+
+    nomes_por_indice = {indice: [] for indice in unidades.index}
+    nao_reconhecidos = []
+    termos_comuns = {
+        "cidadania", "poprua", "pop", "rua", "unidade", "osc",
+        "instituto", "associacao", "centro", "social", "casa",
+    }
+
+    for nome_cais, quantidade in contagem.items():
+        nome_normalizado = normalizar_nome_mapa(nome_cais)
+        indices = set(indice_alias.get(nome_normalizado, set()))
+
+        if not indices and nome_normalizado:
+            melhor_alias = None
+            melhor_pontuacao = 0.0
+            tokens_nome = {
+                token
+                for token in nome_normalizado.split()
+                if len(token) > 2 and token not in termos_comuns
+            }
+
+            for alias in indice_alias:
+                if min(len(alias), len(nome_normalizado)) >= 7 and (
+                    alias in nome_normalizado
+                    or nome_normalizado in alias
+                ):
+                    pontuacao = 0.96
+                else:
+                    pontuacao = SequenceMatcher(
+                        None,
+                        nome_normalizado,
+                        alias,
+                    ).ratio()
+                    tokens_alias = {
+                        token
+                        for token in alias.split()
+                        if len(token) > 2 and token not in termos_comuns
+                    }
+                    if (
+                        pontuacao < 0.88
+                        and not (tokens_nome & tokens_alias)
+                    ):
+                        continue
+
+                if pontuacao > melhor_pontuacao:
+                    melhor_pontuacao = pontuacao
+                    melhor_alias = alias
+
+            if melhor_alias is not None and melhor_pontuacao >= 0.78:
+                indices = set(indice_alias.get(melhor_alias, set()))
+
+        if not indices:
+            nao_reconhecidos.append(str(nome_cais))
+            continue
+
+        metricas["nomes_vinculados"] += 1
+        metricas["atendimentos_vinculados"] += int(quantidade)
+        for indice in indices:
+            unidades.at[indice, "Atendimentos CAIS"] += int(quantidade)
+            nomes_por_indice[indice].append(str(nome_cais))
+
+    unidades["Nomes reconhecidos no CAIS"] = [
+        " | ".join(sorted(set(nomes_por_indice[indice])))
+        for indice in unidades.index
+    ]
+    metricas["nao_reconhecidos"] = sorted(
+        nao_reconhecidos,
+        key=lambda valor: valor.lower(),
+    )
+    return unidades, metricas
+
+
+def enquadramento_mapa(df):
+    if df.empty:
+        return {"lat": -14.235, "lon": -51.9253}, 2.7
+    centro = {
+        "lat": float(df["Latitude"].mean()),
+        "lon": float(df["Longitude"].mean()),
+    }
+    if len(df) == 1:
+        return centro, 11
+    amplitude = max(
+        float(df["Latitude"].max() - df["Latitude"].min()),
+        float(df["Longitude"].max() - df["Longitude"].min()),
+    )
+    if amplitude < 0.4:
+        zoom = 9
+    elif amplitude < 1.5:
+        zoom = 7
+    elif amplitude < 4:
+        zoom = 5.5
+    elif amplitude < 10:
+        zoom = 4.3
+    elif amplitude < 20:
+        zoom = 3.5
+    else:
+        zoom = 2.7
+    return centro, zoom
 
 
 def classificar_demanda(titulo):
@@ -2725,6 +3841,7 @@ navbar = dbc.Navbar(
                 [
                     dbc.NavItem(dbc.NavLink("Início", href="/", active="exact", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
                     dbc.NavItem(dbc.NavLink("Unidades", href="/unidades", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
+                    dbc.NavItem(dbc.NavLink("Mapa", href="/mapa-unidades", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
                     dbc.NavItem(dbc.NavLink("Atendimentos", href="/atendimentos", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
                     dbc.NavItem(dbc.NavLink("Usuários", href="/usuarios", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
                     dbc.NavItem(dbc.NavLink("Auditoria", href="/auditoria", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
@@ -5825,6 +6942,441 @@ base_layout = dbc.Container(
 )
 
 
+mapa_unidades_layout = dbc.Container(
+    [
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        html.H1(
+                            "Mapa das Unidades CAIS",
+                            className="fw-bold mb-2",
+                            style={"color": "#071D41"},
+                        ),
+                        html.P(
+                            (
+                                "Localização das unidades e OSCs no Brasil, "
+                                "integrada aos atendimentos carregados no sistema."
+                            ),
+                            className="text-muted fs-5 mb-0",
+                        ),
+                    ],
+                    width=12,
+                )
+            ],
+            className="mb-3",
+        ),
+
+        dbc.Alert(
+            [
+                html.I(className="fa-solid fa-circle-nodes me-2"),
+                html.Strong("Integração automática: "),
+                (
+                    "o mapa compara o campo 'Atendido Em', 'Unidade / OSC', "
+                    "'Nome da Unidade' ou 'Nome da OSC' da base do CAIS com o "
+                    "cadastro geográfico. A planilha também pode informar nomes "
+                    "alternativos na coluna 'Alias adicional'."
+                ),
+            ],
+            color="info",
+            className="border-0 rounded-4 mb-4",
+        ),
+
+        dbc.Card(
+            dbc.CardBody(
+                [
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    html.H5(
+                                        "Atualizar cadastro geográfico",
+                                        className="fw-bold mb-1",
+                                    ),
+                                    html.P(
+                                        (
+                                            "Envie uma planilha XLSX ou CSV com os "
+                                            "nomes, latitude e longitude. A aba "
+                                            "'Base para o Mapa' é reconhecida automaticamente."
+                                        ),
+                                        className="text-muted mb-3",
+                                    ),
+                                    dcc.Upload(
+                                        id="upload-unidades-mapa",
+                                        accept=".xlsx,.csv",
+                                        multiple=False,
+                                        children=html.Div(
+                                            [
+                                                html.I(
+                                                    className=(
+                                                        "fa-solid fa-cloud-arrow-up "
+                                                        "fa-2x mb-2"
+                                                    )
+                                                ),
+                                                html.Div(
+                                                    "Arraste a planilha ou clique para selecionar",
+                                                    className="fw-semibold",
+                                                ),
+                                                html.Small(
+                                                    "Formatos aceitos: XLSX e CSV",
+                                                    className="text-muted",
+                                                ),
+                                            ],
+                                            className="text-center",
+                                        ),
+                                        style={
+                                            "width": "100%",
+                                            "minHeight": "135px",
+                                            "display": "flex",
+                                            "alignItems": "center",
+                                            "justifyContent": "center",
+                                            "borderWidth": "2px",
+                                            "borderStyle": "dashed",
+                                            "borderColor": "#9DBBE8",
+                                            "borderRadius": "16px",
+                                            "backgroundColor": "#F6F9FE",
+                                            "cursor": "pointer",
+                                            "padding": "18px",
+                                        },
+                                    ),
+                                ],
+                                xs=12,
+                                lg=8,
+                                className="mb-3 mb-lg-0",
+                            ),
+                            dbc.Col(
+                                [
+                                    html.H6(
+                                        "Ações da planilha",
+                                        className="fw-bold mb-3",
+                                    ),
+                                    dbc.Button(
+                                        [
+                                            html.I(className="fa-solid fa-file-excel me-2"),
+                                            "Baixar planilha atual",
+                                        ],
+                                        id="botao-baixar-unidades-mapa",
+                                        color="success",
+                                        className="w-100 mb-2",
+                                    ),
+                                    dbc.Button(
+                                        [
+                                            html.I(className="fa-solid fa-rotate-left me-2"),
+                                            "Restaurar base original",
+                                        ],
+                                        id="botao-restaurar-unidades-mapa",
+                                        color="secondary",
+                                        outline=True,
+                                        className="w-100",
+                                    ),
+                                    dcc.Download(id="download-unidades-mapa"),
+                                ],
+                                xs=12,
+                                lg=4,
+                            ),
+                        ],
+                        className="g-3 align-items-stretch",
+                    ),
+                    html.Div(id="mensagem-upload-unidades-mapa", className="mt-3"),
+                ],
+                className="p-4",
+            ),
+            className="shadow-sm border-0 rounded-4 mb-4",
+        ),
+
+        dbc.Card(
+            dbc.CardBody(
+                [
+                    html.H5("Filtros e visualização", className="fw-bold mb-3"),
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    dbc.Label("Região", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="filtro-regiao-mapa",
+                                        placeholder="Todas as regiões",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12,
+                                sm=6,
+                                xl=3,
+                                className="mb-3",
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label("UF", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="filtro-uf-mapa",
+                                        placeholder="Todas as UFs",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12,
+                                sm=6,
+                                xl=3,
+                                className="mb-3",
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label("Fase", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="filtro-fase-mapa",
+                                        placeholder="Todas as fases",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12,
+                                sm=6,
+                                xl=3,
+                                className="mb-3",
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label("Unidade ou OSC", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="filtro-unidade-mapa",
+                                        placeholder="Todas as unidades / OSCs",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12,
+                                sm=6,
+                                xl=3,
+                                className="mb-3",
+                            ),
+                        ],
+                        className="g-3",
+                    ),
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    dbc.Label("Fundo do mapa", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="estilo-mapa-unidades",
+                                        options=[
+                                            {"label": "Claro", "value": "carto-positron"},
+                                            {"label": "Ruas", "value": "open-street-map"},
+                                            {"label": "Escuro", "value": "carto-darkmatter"},
+                                        ],
+                                        value="carto-positron",
+                                        clearable=False,
+                                    ),
+                                ],
+                                xs=12,
+                                md=4,
+                                className="mb-3",
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label("Tamanho dos pontos", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="modo-pontos-mapa",
+                                        options=[
+                                            {"label": "Tamanho uniforme", "value": "uniforme"},
+                                            {"label": "Por atendimentos CAIS", "value": "atendimentos"},
+                                        ],
+                                        value="uniforme",
+                                        clearable=False,
+                                    ),
+                                ],
+                                xs=12,
+                                md=4,
+                                className="mb-3",
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label("Organização dos pontos", className="fw-semibold"),
+                                    dbc.Switch(
+                                        id="agrupar-pontos-mapa",
+                                        label="Agrupar pontos próximos",
+                                        value=True,
+                                        className="mt-2",
+                                    ),
+                                ],
+                                xs=12,
+                                md=4,
+                                className="mb-3",
+                            ),
+                        ],
+                        className="g-3 align-items-end",
+                    ),
+                    dbc.Button(
+                        [
+                            html.I(className="fa-solid fa-filter-circle-xmark me-2"),
+                            "Limpar filtros",
+                        ],
+                        id="botao-limpar-filtros-mapa",
+                        color="secondary",
+                        outline=True,
+                    ),
+                ],
+                className="p-4",
+            ),
+            className="shadow-sm border-0 rounded-4 mb-4",
+        ),
+
+        dbc.Row(
+            [
+                dbc.Col(
+                    criar_card(
+                        "Registros na planilha",
+                        "0",
+                        "fa-solid fa-building",
+                        "card-registros-mapa",
+                    ),
+                    xs=12,
+                    sm=6,
+                    xl=3,
+                    className="mb-3",
+                ),
+                dbc.Col(
+                    criar_card(
+                        "Pontos exibidos",
+                        "0",
+                        "fa-solid fa-location-dot",
+                        "card-pontos-mapa",
+                    ),
+                    xs=12,
+                    sm=6,
+                    xl=3,
+                    className="mb-3",
+                ),
+                dbc.Col(
+                    criar_card(
+                        "Atendimentos vinculados",
+                        "0",
+                        "fa-solid fa-link",
+                        "card-atendimentos-mapa",
+                    ),
+                    xs=12,
+                    sm=6,
+                    xl=3,
+                    className="mb-3",
+                ),
+                dbc.Col(
+                    criar_card(
+                        "Sem coordenadas",
+                        "0",
+                        "fa-solid fa-location-crosshairs",
+                        "card-sem-coordenadas-mapa",
+                    ),
+                    xs=12,
+                    sm=6,
+                    xl=3,
+                    className="mb-3",
+                ),
+            ],
+            className="g-3 mb-1",
+        ),
+
+        html.Div(id="mensagem-cruzamento-mapa", className="mb-4"),
+
+        dbc.Card(
+            dbc.CardBody(
+                [
+                    html.Div(
+                        [
+                            html.H5(
+                                "Distribuição territorial das unidades",
+                                className="fw-bold mb-1",
+                            ),
+                            html.Small(
+                                (
+                                    "Use o mouse, o toque, a roda de rolagem e os "
+                                    "controles do mapa para navegar e ampliar."
+                                ),
+                                className="text-muted",
+                            ),
+                        ],
+                        className="mb-3",
+                    ),
+                    dcc.Loading(
+                        dcc.Graph(
+                            id="mapa-unidades-cais",
+                            responsive=True,
+                            config={
+                                "responsive": True,
+                                "scrollZoom": True,
+                                "displaylogo": False,
+                                "modeBarButtonsToRemove": [
+                                    "lasso2d",
+                                    "select2d",
+                                ],
+                            },
+                            style={
+                                "width": "100%",
+                                "height": "clamp(480px, 70vh, 760px)",
+                            },
+                        ),
+                        type="circle",
+                    ),
+                ],
+                className="p-2 p-md-4",
+            ),
+            className="shadow-sm border-0 rounded-4 mb-4 overflow-hidden",
+        ),
+
+        dbc.Card(
+            dbc.CardBody(
+                [
+                    html.H5("Dados exibidos no mapa", className="fw-bold mb-1"),
+                    html.P(
+                        (
+                            "A tabela permanece disponível em telas menores e pode "
+                            "ser filtrada, ordenada e exportada em CSV."
+                        ),
+                        className="text-muted mb-3",
+                    ),
+                    dash_table.DataTable(
+                        id="tabela-unidades-mapa",
+                        columns=[],
+                        data=[],
+                        page_size=15,
+                        sort_action="native",
+                        filter_action="native",
+                        page_action="native",
+                        export_format="csv",
+                        export_headers="display",
+                        style_table={
+                            "overflowX": "auto",
+                            "WebkitOverflowScrolling": "touch",
+                        },
+                        style_cell={
+                            "textAlign": "left",
+                            "padding": "10px",
+                            "fontFamily": "Arial",
+                            "fontSize": "13px",
+                            "minWidth": "110px",
+                            "maxWidth": "340px",
+                            "whiteSpace": "normal",
+                        },
+                        style_header={
+                            "fontWeight": "bold",
+                            "backgroundColor": "#D6E7FF",
+                            "color": "#071D41",
+                        },
+                        style_data_conditional=[
+                            {
+                                "if": {"filter_query": '{Mapeável} = "Não"'},
+                                "backgroundColor": "#FFF0EF",
+                                "color": "#8B1E18",
+                            }
+                        ],
+                    ),
+                ],
+                className="p-4",
+            ),
+            className="shadow-sm border-0 rounded-4 mb-4",
+        ),
+    ],
+    fluid=True,
+    className="px-2 px-md-4 pb-5",
+)
+
+
 relatorios_layout = pagina_em_construcao(
     "Relatórios",
     (
@@ -5849,6 +7401,15 @@ app.layout = html.Div(
         dcc.Store(
             id="dados-cais",
             storage_type="memory",
+        ),
+
+        dcc.Store(
+            id="dados-unidades-mapa",
+            storage_type="memory",
+            data=carregar_base_unidades_mapa().to_json(
+                orient="split",
+                force_ascii=False,
+            ),
         ),
 
         dcc.Store(
@@ -5907,6 +7468,8 @@ def navegar_paginas(pathname, auth_refresh):
         pagina = atendimentos_layout
     elif pathname == "/unidades":
         pagina = unidades_layout
+    elif pathname == "/mapa-unidades":
+        pagina = mapa_unidades_layout
     elif pathname == "/usuarios":
         pagina = usuarios_layout
     elif pathname == "/auditoria":
@@ -6064,8 +7627,14 @@ def processar_upload_home(
             "status do atendimento",
             "criado em",
             "atualizado em",
-            "atendido em",
             "atendido por",
+        }
+        alternativas_unidade = {
+            "atendido em",
+            "unidade / osc",
+            "unidade/osc",
+            "nome da unidade",
+            "nome da osc",
         }
 
         dataframes_validos = []
@@ -6093,9 +7662,10 @@ def processar_upload_home(
                 }
 
                 eh_atendimento = (
-                    colunas_necessarias
-                    .issubset(
-                        colunas_normalizadas
+                    colunas_necessarias.issubset(colunas_normalizadas)
+                    and bool(
+                        alternativas_unidade
+                        & colunas_normalizadas
                     )
                 )
 
@@ -8936,6 +10506,373 @@ def carregar_importacao_salva(n_clicks, importacao_id):
             color="danger",
             className="mb-0",
         )
+
+
+# ============================================================
+# CALLBACKS - MAPA DAS UNIDADES
+# ============================================================
+
+@app.callback(
+    [
+        Output("mensagem-upload-unidades-mapa", "children"),
+        Output("dados-unidades-mapa", "data"),
+    ],
+    Input("upload-unidades-mapa", "contents"),
+    State("upload-unidades-mapa", "filename"),
+    prevent_initial_call=True,
+)
+def processar_upload_unidades_mapa(conteudo, nome_arquivo):
+    if not conteudo:
+        return no_update, no_update
+    try:
+        base = ler_base_unidades_upload(nome_arquivo, conteudo)
+        if base.empty:
+            raise ValueError("A planilha não possui registros utilizáveis.")
+        salvar_base_unidades_mapa(base)
+        mapeaveis = int((base["Mapeável"] == "Sim").sum())
+        pendentes = int((base["Mapeável"] != "Sim").sum())
+        return (
+            dbc.Alert(
+                [
+                    html.I(className="fa-solid fa-circle-check me-2"),
+                    html.Strong("Cadastro geográfico atualizado. "),
+                    (
+                        f"{len(base)} registro(s), {mapeaveis} ponto(s) com "
+                        f"coordenadas e {pendentes} pendência(s) geográfica(s)."
+                    ),
+                ],
+                color="success",
+                className="mb-0 rounded-4",
+            ),
+            base.to_json(orient="split", force_ascii=False),
+        )
+    except Exception as erro:
+        return (
+            dbc.Alert(
+                [
+                    html.I(className="fa-solid fa-triangle-exclamation me-2"),
+                    html.Strong("Não foi possível carregar a planilha. "),
+                    str(erro),
+                ],
+                color="danger",
+                className="mb-0 rounded-4",
+            ),
+            no_update,
+        )
+
+
+@app.callback(
+    [
+        Output("dados-unidades-mapa", "data", allow_duplicate=True),
+        Output("mensagem-upload-unidades-mapa", "children", allow_duplicate=True),
+    ],
+    Input("botao-restaurar-unidades-mapa", "n_clicks"),
+    prevent_initial_call=True,
+)
+def restaurar_base_unidades_mapa(n_clicks):
+    base = padronizar_base_unidades_mapa(pd.DataFrame(UNIDADES_MAPA_PADRAO))
+    salvar_base_unidades_mapa(base)
+    return (
+        base.to_json(orient="split", force_ascii=False),
+        dbc.Alert(
+            [
+                html.I(className="fa-solid fa-rotate-left me-2"),
+                "A base geográfica original foi restaurada.",
+            ],
+            color="info",
+            className="mb-0 rounded-4",
+        ),
+    )
+
+
+@app.callback(
+    Output("download-unidades-mapa", "data"),
+    Input("botao-baixar-unidades-mapa", "n_clicks"),
+    State("dados-unidades-mapa", "data"),
+    prevent_initial_call=True,
+)
+def baixar_planilha_unidades_mapa(n_clicks, dados_unidades):
+    if not dados_unidades:
+        return no_update
+    base = pd.read_json(io.StringIO(dados_unidades), orient="split")
+    base = padronizar_base_unidades_mapa(base)
+    return dcc.send_data_frame(
+        base.to_excel,
+        "UNIDADES_CAIS_BRASIL_MAPA.xlsx",
+        sheet_name="Base para o Mapa",
+        index=False,
+    )
+
+
+@app.callback(
+    [
+        Output("filtro-regiao-mapa", "options"),
+        Output("filtro-uf-mapa", "options"),
+        Output("filtro-fase-mapa", "options"),
+        Output("filtro-unidade-mapa", "options"),
+    ],
+    Input("dados-unidades-mapa", "data"),
+)
+def carregar_filtros_mapa(dados_unidades):
+    if not dados_unidades:
+        return [], [], [], []
+    base = pd.read_json(io.StringIO(dados_unidades), orient="split")
+    base = padronizar_base_unidades_mapa(base)
+    nomes = set()
+    for coluna in ["Nome da Unidade", "Nome da OSC"]:
+        for valor in serie_texto(base, coluna):
+            if not valor_generico_mapa(valor):
+                nomes.add(valor)
+    return (
+        criar_opcoes(valores_unicos(base, "Região")),
+        criar_opcoes(valores_unicos(base, "UF")),
+        criar_opcoes(valores_unicos(base, "Fase")),
+        criar_opcoes(sorted(nomes, key=lambda valor: valor.lower())),
+    )
+
+
+@app.callback(
+    [
+        Output("filtro-regiao-mapa", "value"),
+        Output("filtro-uf-mapa", "value"),
+        Output("filtro-fase-mapa", "value"),
+        Output("filtro-unidade-mapa", "value"),
+    ],
+    Input("botao-limpar-filtros-mapa", "n_clicks"),
+    prevent_initial_call=True,
+)
+def limpar_filtros_mapa(n_clicks):
+    return None, None, None, None
+
+
+@app.callback(
+    [
+        Output("mapa-unidades-cais", "figure"),
+        Output("card-registros-mapa", "children"),
+        Output("card-pontos-mapa", "children"),
+        Output("card-atendimentos-mapa", "children"),
+        Output("card-sem-coordenadas-mapa", "children"),
+        Output("mensagem-cruzamento-mapa", "children"),
+        Output("tabela-unidades-mapa", "columns"),
+        Output("tabela-unidades-mapa", "data"),
+    ],
+    [
+        Input("dados-unidades-mapa", "data"),
+        Input("dados-cais", "data"),
+        Input("filtro-regiao-mapa", "value"),
+        Input("filtro-uf-mapa", "value"),
+        Input("filtro-fase-mapa", "value"),
+        Input("filtro-unidade-mapa", "value"),
+        Input("estilo-mapa-unidades", "value"),
+        Input("modo-pontos-mapa", "value"),
+        Input("agrupar-pontos-mapa", "value"),
+    ],
+)
+def atualizar_mapa_unidades(
+    dados_unidades,
+    dados_cais,
+    regiao,
+    uf,
+    fase,
+    unidade,
+    estilo,
+    modo_pontos,
+    agrupar,
+):
+    if not dados_unidades:
+        vazio = figura_vazia("Aguardando a base geográfica das unidades.")
+        return vazio, "0", "0", "0", "0", None, [], []
+
+    base = pd.read_json(io.StringIO(dados_unidades), orient="split")
+    base = padronizar_base_unidades_mapa(base)
+    integrada, metricas = consolidar_atendimentos_no_mapa(base, dados_cais)
+    filtrada = integrada.copy()
+
+    if regiao:
+        filtrada = filtrada[filtrada["Região"] == regiao].copy()
+    if uf:
+        filtrada = filtrada[filtrada["UF"] == uf].copy()
+    if fase:
+        filtrada = filtrada[filtrada["Fase"] == fase].copy()
+    if unidade:
+        filtrada = filtrada[
+            (filtrada["Nome da Unidade"] == unidade)
+            | (filtrada["Nome da OSC"] == unidade)
+        ].copy()
+
+    pontos = filtrada[
+        filtrada["Latitude"].notna()
+        & filtrada["Longitude"].notna()
+    ].copy()
+    sem_coordenadas = int(len(filtrada) - len(pontos))
+
+    if pontos.empty:
+        figura = figura_vazia(
+            "Nenhuma unidade com coordenadas corresponde aos filtros."
+        )
+    else:
+        pontos["Tamanho do ponto"] = (
+            pd.to_numeric(
+                pontos["Atendimentos CAIS"],
+                errors="coerce",
+            ).fillna(0) + 1
+        )
+        centro, zoom = enquadramento_mapa(pontos)
+        argumentos = {
+            "data_frame": pontos,
+            "lat": "Latitude",
+            "lon": "Longitude",
+            "color": "Fase",
+            "hover_name": "Nome para exibição",
+            "hover_data": {
+                "Nome da OSC": True,
+                "Nome da Unidade": True,
+                "Município": True,
+                "UF": True,
+                "Endereço": True,
+                "Situação": True,
+                "Atendimentos CAIS": True,
+                "Nomes reconhecidos no CAIS": True,
+                "Latitude": False,
+                "Longitude": False,
+                "Tamanho do ponto": False,
+            },
+            "center": centro,
+            "zoom": zoom,
+            "color_discrete_map": {
+                "Em funcionamento": "#168821",
+                "Em funcionamento parcial": "#2E7D32",
+                "Em implantação": "#E6A700",
+                "Em formalização": "#1351B4",
+                "Não informado": "#6C757D",
+            },
+        }
+        if modo_pontos == "atendimentos":
+            argumentos["size"] = "Tamanho do ponto"
+            argumentos["size_max"] = 34
+
+        if hasattr(px, "scatter_map"):
+            figura = px.scatter_map(
+                **argumentos,
+                map_style=estilo or "carto-positron",
+            )
+        else:
+            figura = px.scatter_mapbox(**argumentos)
+            figura.update_layout(
+                mapbox_style=estilo or "carto-positron"
+            )
+
+        if modo_pontos != "atendimentos":
+            figura.update_traces(
+                marker={"size": 14, "opacity": 0.9}
+            )
+        else:
+            figura.update_traces(marker={"opacity": 0.88})
+
+        if agrupar:
+            try:
+                figura.update_traces(
+                    cluster={
+                        "enabled": True,
+                        "maxzoom": 9,
+                        "step": 25,
+                    }
+                )
+            except Exception:
+                pass
+
+        figura.update_layout(
+            autosize=True,
+            margin={"l": 0, "r": 0, "t": 0, "b": 0},
+            legend={
+                "title": {"text": "Fase"},
+                "orientation": "h",
+                "yanchor": "bottom",
+                "y": 0.01,
+                "xanchor": "left",
+                "x": 0.01,
+                "bgcolor": "rgba(255,255,255,0.82)",
+            },
+            uirevision=(
+                f"{regiao}|{uf}|{fase}|{unidade}|{estilo}|{modo_pontos}"
+            ),
+        )
+
+    if not dados_cais:
+        mensagem = dbc.Alert(
+            [
+                html.I(className="fa-solid fa-circle-info me-2"),
+                (
+                    "O cadastro geográfico está sendo exibido. Importe a base "
+                    "de atendimentos na página inicial para acrescentar os "
+                    "quantitativos do CAIS aos pontos."
+                ),
+            ],
+            color="light",
+            className="border rounded-4 mb-0",
+        )
+    else:
+        nao_reconhecidos = metricas["nao_reconhecidos"]
+        detalhes = []
+        if nao_reconhecidos:
+            detalhes.append(
+                html.Details(
+                    [
+                        html.Summary(
+                            f"Ver {len(nao_reconhecidos)} nome(s) não reconhecido(s)",
+                            className="fw-semibold mt-2",
+                        ),
+                        html.Ul(
+                            [html.Li(nome) for nome in nao_reconhecidos],
+                            className="mb-0 mt-2",
+                        ),
+                    ]
+                )
+            )
+        mensagem = dbc.Alert(
+            [
+                html.I(className="fa-solid fa-link me-2"),
+                html.Strong("Cruzamento com a base do CAIS: "),
+                (
+                    f"{metricas['nomes_vinculados']} de "
+                    f"{metricas['nomes_total']} nome(s) de unidade/OSC reconhecido(s), "
+                    f"representando {metricas['atendimentos_vinculados']} de "
+                    f"{metricas['total_atendimentos']} atendimento(s)."
+                ),
+                *detalhes,
+            ],
+            color="warning" if nao_reconhecidos else "success",
+            className="rounded-4 mb-0",
+        )
+
+    colunas_tabela = [
+        "Região",
+        "UF",
+        "Nome da OSC",
+        "Nome da Unidade",
+        "Município",
+        "Endereço",
+        "Fase",
+        "Atendimentos CAIS",
+        "Nomes reconhecidos no CAIS",
+        "Mapeável",
+    ]
+    tabela = filtrada[colunas_tabela].copy()
+    tabela["Atendimentos CAIS"] = pd.to_numeric(
+        tabela["Atendimentos CAIS"],
+        errors="coerce",
+    ).fillna(0).astype(int)
+
+    return (
+        figura,
+        str(len(base)),
+        str(len(pontos)),
+        str(metricas["atendimentos_vinculados"]),
+        str(sem_coordenadas),
+        mensagem,
+        [{"name": coluna, "id": coluna} for coluna in colunas_tabela],
+        tabela.to_dict("records"),
+    )
 
 
 # ============================================================
