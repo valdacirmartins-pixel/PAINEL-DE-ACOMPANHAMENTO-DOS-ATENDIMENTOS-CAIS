@@ -1837,6 +1837,24 @@ LIMITES_LATITUDE_UF = {
     "SE": (-11.7, -9.5), "SP": (-25.5, -19.5), "TO": (-13.5, -5.0),
 }
 
+ORDEM_REGIOES_MAPA = [
+    "Norte",
+    "Nordeste",
+    "Centro-Oeste",
+    "Sudeste",
+    "Sul",
+    "Não informado",
+]
+
+CORES_REGIOES_MAPA = {
+    "Norte": "#168821",
+    "Nordeste": "#E6A700",
+    "Centro-Oeste": "#8E44AD",
+    "Sudeste": "#1351B4",
+    "Sul": "#D32F2F",
+    "Não informado": "#6C757D",
+}
+
 
 def normalizar_nome_mapa(texto):
     texto = normalizar_texto(texto)
@@ -7191,8 +7209,8 @@ mapa_unidades_layout = dbc.Container(
                                     dbc.Label("Organização dos pontos", className="fw-semibold"),
                                     dbc.Switch(
                                         id="agrupar-pontos-mapa",
-                                        label="Agrupar pontos próximos",
-                                        value=True,
+                                        label="Agrupar pontos próximos (opcional)",
+                                        value=False,
                                         className="mt-2",
                                     ),
                                 ],
@@ -7277,6 +7295,88 @@ mapa_unidades_layout = dbc.Container(
         dbc.Card(
             dbc.CardBody(
                 [
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    html.H5(
+                                        "Comparação por região",
+                                        className="fw-bold mb-1",
+                                    ),
+                                    html.P(
+                                        (
+                                            "Compare as cinco regiões e identifique "
+                                            "rapidamente onde há mais unidades, pontos "
+                                            "mapeáveis ou atendimentos vinculados."
+                                        ),
+                                        className="text-muted mb-0",
+                                    ),
+                                ],
+                                xs=12,
+                                lg=8,
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label(
+                                        "Indicador regional",
+                                        className="fw-semibold",
+                                    ),
+                                    dcc.Dropdown(
+                                        id="metrica-regional-mapa",
+                                        options=[
+                                            {
+                                                "label": "Unidades cadastradas",
+                                                "value": "unidades",
+                                            },
+                                            {
+                                                "label": "Pontos mapeáveis",
+                                                "value": "pontos",
+                                            },
+                                            {
+                                                "label": "Atendimentos CAIS",
+                                                "value": "atendimentos",
+                                            },
+                                        ],
+                                        value="unidades",
+                                        clearable=False,
+                                    ),
+                                ],
+                                xs=12,
+                                lg=4,
+                                className="mt-3 mt-lg-0",
+                            ),
+                        ],
+                        className="g-3 align-items-end",
+                    ),
+                    html.Div(
+                        id="destaque-regiao-mapa",
+                        className="mt-3",
+                    ),
+                    dcc.Loading(
+                        dcc.Graph(
+                            id="grafico-regioes-mapa",
+                            responsive=True,
+                            config={
+                                "responsive": True,
+                                "displaylogo": False,
+                                "displayModeBar": False,
+                            },
+                            style={
+                                "width": "100%",
+                                "height": "clamp(310px, 42vh, 420px)",
+                            },
+                        ),
+                        type="circle",
+                    ),
+                ],
+                className="p-3 p-md-4",
+            ),
+            className="shadow-sm border-0 rounded-4 mb-4",
+        ),
+
+        dbc.Card(
+            dbc.CardBody(
+                [
                     html.Div(
                         [
                             html.H5(
@@ -7285,8 +7385,8 @@ mapa_unidades_layout = dbc.Container(
                             ),
                             html.Small(
                                 (
-                                    "Use o mouse, o toque, a roda de rolagem e os "
-                                    "controles do mapa para navegar e ampliar."
+                                    "Cada cor representa uma região. Use o mouse, "
+                                    "o toque e os controles do mapa para navegar."
                                 ),
                                 className="text-muted",
                             ),
@@ -10647,6 +10747,156 @@ def limpar_filtros_mapa(n_clicks):
 
 @app.callback(
     [
+        Output("grafico-regioes-mapa", "figure"),
+        Output("destaque-regiao-mapa", "children"),
+    ],
+    [
+        Input("dados-unidades-mapa", "data"),
+        Input("dados-cais", "data"),
+        Input("filtro-regiao-mapa", "value"),
+        Input("filtro-uf-mapa", "value"),
+        Input("filtro-fase-mapa", "value"),
+        Input("filtro-unidade-mapa", "value"),
+        Input("metrica-regional-mapa", "value"),
+    ],
+)
+def atualizar_resumo_regional_mapa(
+    dados_unidades,
+    dados_cais,
+    regiao,
+    uf,
+    fase,
+    unidade,
+    metrica,
+):
+    if not dados_unidades:
+        return (
+            figura_vazia("Aguardando a base geográfica das unidades."),
+            None,
+        )
+
+    base = pd.read_json(io.StringIO(dados_unidades), orient="split")
+    base = padronizar_base_unidades_mapa(base)
+    integrada, _ = consolidar_atendimentos_no_mapa(base, dados_cais)
+    filtrada = integrada.copy()
+
+    if regiao:
+        filtrada = filtrada[filtrada["Região"] == regiao].copy()
+    if uf:
+        filtrada = filtrada[filtrada["UF"] == uf].copy()
+    if fase:
+        filtrada = filtrada[filtrada["Fase"] == fase].copy()
+    if unidade:
+        filtrada = filtrada[
+            (filtrada["Nome da Unidade"] == unidade)
+            | (filtrada["Nome da OSC"] == unidade)
+        ].copy()
+
+    if filtrada.empty:
+        return (
+            figura_vazia("Nenhum registro corresponde aos filtros selecionados."),
+            dbc.Alert(
+                "Não há dados regionais para o recorte selecionado.",
+                color="light",
+                className="border rounded-4 mb-0",
+            ),
+        )
+
+    filtrada["Região"] = filtrada["Região"].fillna("").astype(str).str.strip()
+    filtrada.loc[filtrada["Região"] == "", "Região"] = "Não informado"
+    filtrada["Atendimentos CAIS"] = pd.to_numeric(
+        filtrada["Atendimentos CAIS"],
+        errors="coerce",
+    ).fillna(0).astype(int)
+    filtrada["Ponto mapeável"] = (
+        filtrada["Latitude"].notna()
+        & filtrada["Longitude"].notna()
+    ).astype(int)
+
+    resumo = (
+        filtrada.groupby("Região", as_index=False)
+        .agg(
+            Unidades=("Nome para exibição", "size"),
+            Pontos=("Ponto mapeável", "sum"),
+            Atendimentos=("Atendimentos CAIS", "sum"),
+        )
+    )
+
+    configuracoes = {
+        "unidades": ("Unidades", "Unidades cadastradas"),
+        "pontos": ("Pontos", "Pontos mapeáveis"),
+        "atendimentos": ("Atendimentos", "Atendimentos CAIS"),
+    }
+    coluna_valor, rotulo = configuracoes.get(
+        metrica,
+        configuracoes["unidades"],
+    )
+    resumo = resumo.sort_values(
+        [coluna_valor, "Região"],
+        ascending=[True, False],
+    )
+
+    figura = px.bar(
+        resumo,
+        x=coluna_valor,
+        y="Região",
+        orientation="h",
+        color="Região",
+        color_discrete_map=CORES_REGIOES_MAPA,
+        text=coluna_valor,
+        labels={coluna_valor: rotulo, "Região": "Região"},
+        hover_data={
+            "Unidades": True,
+            "Pontos": True,
+            "Atendimentos": True,
+        },
+    )
+    figura.update_traces(
+        textposition="outside",
+        cliponaxis=False,
+        hovertemplate=(
+            "<b>%{y}</b><br>"
+            + rotulo
+            + ": %{x:,.0f}<extra></extra>"
+        ),
+    )
+    figura.update_layout(
+        autosize=True,
+        showlegend=False,
+        margin={"l": 15, "r": 45, "t": 20, "b": 45},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis={
+            "title": rotulo,
+            "showgrid": True,
+            "gridcolor": "#E7ECF3",
+            "rangemode": "tozero",
+        },
+        yaxis={"title": ""},
+        font={"color": "#071D41"},
+    )
+
+    maior_valor = int(resumo[coluna_valor].max())
+    lideres = resumo.loc[
+        resumo[coluna_valor] == maior_valor,
+        "Região",
+    ].tolist()
+    nomes_lideres = " e ".join(lideres)
+    verbo = "lideram" if len(lideres) > 1 else "lidera"
+    destaque = dbc.Alert(
+        [
+            html.I(className="fa-solid fa-chart-column me-2"),
+            html.Strong(f"{nomes_lideres} {verbo} o recorte: "),
+            f"{maior_valor} em {rotulo.lower()}.",
+        ],
+        color="primary",
+        className="rounded-4 mb-0 py-2",
+    )
+    return figura, destaque
+
+
+@app.callback(
+    [
         Output("mapa-unidades-cais", "figure"),
         Output("card-registros-mapa", "children"),
         Output("card-pontos-mapa", "children"),
@@ -10722,9 +10972,10 @@ def atualizar_mapa_unidades(
             "data_frame": pontos,
             "lat": "Latitude",
             "lon": "Longitude",
-            "color": "Fase",
+            "color": "Região",
             "hover_name": "Nome para exibição",
             "hover_data": {
+                "Região": True,
                 "Nome da OSC": True,
                 "Nome da Unidade": True,
                 "Município": True,
@@ -10739,17 +10990,12 @@ def atualizar_mapa_unidades(
             },
             "center": centro,
             "zoom": zoom,
-            "color_discrete_map": {
-                "Em funcionamento": "#168821",
-                "Em funcionamento parcial": "#2E7D32",
-                "Em implantação": "#E6A700",
-                "Em formalização": "#1351B4",
-                "Não informado": "#6C757D",
-            },
+            "color_discrete_map": CORES_REGIOES_MAPA,
+            "category_orders": {"Região": ORDEM_REGIOES_MAPA},
         }
         if modo_pontos == "atendimentos":
             argumentos["size"] = "Tamanho do ponto"
-            argumentos["size_max"] = 34
+            argumentos["size_max"] = 18
 
         if hasattr(px, "scatter_map"):
             figura = px.scatter_map(
@@ -10764,10 +11010,10 @@ def atualizar_mapa_unidades(
 
         if modo_pontos != "atendimentos":
             figura.update_traces(
-                marker={"size": 14, "opacity": 0.9}
+                marker={"size": 7, "opacity": 0.82}
             )
         else:
-            figura.update_traces(marker={"opacity": 0.88})
+            figura.update_traces(marker={"opacity": 0.82})
 
         if agrupar:
             try:
@@ -10785,7 +11031,7 @@ def atualizar_mapa_unidades(
             autosize=True,
             margin={"l": 0, "r": 0, "t": 0, "b": 0},
             legend={
-                "title": {"text": "Fase"},
+                "title": {"text": "Região"},
                 "orientation": "h",
                 "yanchor": "bottom",
                 "y": 0.01,
