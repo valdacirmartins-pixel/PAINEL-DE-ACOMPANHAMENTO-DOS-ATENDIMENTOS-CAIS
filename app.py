@@ -798,6 +798,8 @@ def registrar_importacao(tipo, nomes_arquivos, conteudos_arquivos, dataframe, pe
     inicializar_banco()
     nomes_arquivos = list(nomes_arquivos or [])
     conteudos_arquivos = list(conteudos_arquivos or [])
+    if tipo == "Atendimentos":
+        dataframe, _ = excluir_unidades_administrativas(dataframe)
     quantidade_registros = len(dataframe)
     quantidade_unidades = 0
 
@@ -1097,7 +1099,7 @@ def aplicar_filtros(
     data_inicial=None,
     data_final=None,
 ):
-    df_filtrado = df.copy()
+    df_filtrado, _ = excluir_unidades_administrativas(df)
     colunas = localizar_colunas(df_filtrado)
 
     if unidade and colunas["unidade"]:
@@ -1275,6 +1277,7 @@ def calcular_pendencias(df):
 
 
 def calcular_metricas(df):
+    df, _ = excluir_unidades_administrativas(df)
     colunas = localizar_colunas(df)
 
     total = len(df)
@@ -1916,6 +1919,58 @@ def normalizar_nome_mapa(texto):
     return re.sub(r"\s+", " ", texto).strip()
 
 
+# Unidades usadas somente pela equipe que administra o Sistema CAIS.
+# Os registros permanecem nos arquivos originais, mas são ignorados em
+# contagens, filtros, gráficos, mapa, tabelas e relatórios do painel.
+UNIDADES_ADMINISTRATIVAS_CAIS = (
+    "CIDADANIA POP RUA (DF) - Administração Teste",
+    "Cidadania Pop Rua: CAIS + PAR (administrativo)",
+)
+
+UNIDADES_ADMINISTRATIVAS_NORMALIZADAS = frozenset(
+    normalizar_nome_mapa(nome)
+    for nome in UNIDADES_ADMINISTRATIVAS_CAIS
+)
+
+COLUNAS_REFERENCIA_UNIDADE_CAIS = frozenset(
+    normalizar_nome_mapa(nome)
+    for nome in (
+        "Atendido Em",
+        "Unidade / OSC",
+        "Unidade/OSC",
+        "Nome da Unidade",
+        "Nome da OSC",
+    )
+)
+
+
+def mascara_unidades_administrativas(df):
+    if df is None or df.empty:
+        indice = df.index if isinstance(df, pd.DataFrame) else None
+        return pd.Series(False, index=indice, dtype=bool)
+
+    mascara = pd.Series(False, index=df.index, dtype=bool)
+    for coluna in df.columns:
+        if normalizar_nome_mapa(coluna) not in COLUNAS_REFERENCIA_UNIDADE_CAIS:
+            continue
+        valores = serie_texto(df, coluna).map(normalizar_nome_mapa)
+        mascara = mascara | valores.isin(
+            UNIDADES_ADMINISTRATIVAS_NORMALIZADAS
+        )
+    return mascara
+
+
+def excluir_unidades_administrativas(df):
+    if df is None:
+        return pd.DataFrame(), 0
+    if df.empty:
+        return df.copy(), 0
+
+    mascara = mascara_unidades_administrativas(df)
+    quantidade = int(mascara.sum())
+    return df.loc[~mascara].copy(), quantidade
+
+
 def valor_generico_mapa(texto):
     return normalizar_nome_mapa(texto) in {
         "",
@@ -2145,6 +2200,8 @@ def padronizar_base_unidades_mapa(df):
     resultado = pd.DataFrame(registros, columns=COLUNAS_UNIDADES_MAPA)
     if not resultado.empty:
         resultado = resultado.drop_duplicates().reset_index(drop=True)
+        resultado, _ = excluir_unidades_administrativas(resultado)
+        resultado = resultado.reset_index(drop=True)
     return resultado
 
 
@@ -2248,6 +2305,8 @@ def consolidar_atendimentos_no_mapa(base_unidades, dados_cais):
         )
     except Exception:
         return unidades, metricas
+
+    atendimentos, _ = excluir_unidades_administrativas(atendimentos)
 
     colunas = localizar_colunas(atendimentos)
     coluna_unidade = colunas.get("unidade")
@@ -2378,10 +2437,12 @@ def ler_dataframe_store(conteudo):
     if not conteudo:
         return pd.DataFrame()
     try:
-        return pd.read_json(
+        dataframe = pd.read_json(
             io.StringIO(conteudo),
             orient="split",
         )
+        dataframe, _ = excluir_unidades_administrativas(dataframe)
+        return dataframe
     except Exception:
         return pd.DataFrame()
 
@@ -9262,6 +9323,15 @@ def processar_upload_home(
             sort=False,
         )
 
+        df, registros_administrativos_ignorados = (
+            excluir_unidades_administrativas(df)
+        )
+
+        if df.empty:
+            raise ValueError(
+                "A base contém somente registros das unidades administrativas."
+            )
+
         quantidade_linhas = len(
             df
         )
@@ -9368,6 +9438,25 @@ def processar_upload_home(
                 ]
             ),
         ]
+
+        if registros_administrativos_ignorados:
+            mensagem_conteudo.extend(
+                [
+                    html.Br(),
+                    html.Small(
+                        [
+                            html.Strong(
+                                "Registros administrativos ignorados: "
+                            ),
+                            (
+                                f"{registros_administrativos_ignorados}. "
+                                "Eles não entram nos indicadores, gráficos, "
+                                "mapa, tabelas ou relatórios."
+                            ),
+                        ]
+                    ),
+                ]
+            )
 
         if importacao_id:
             mensagem_conteudo.extend(
@@ -12016,9 +12105,21 @@ def carregar_importacao_salva(n_clicks, importacao_id):
     try:
         if registro["tipo"] == "Atendimentos":
             df = pd.read_csv(caminho, encoding="utf-8-sig", sep=";")
+            df, registros_administrativos_ignorados = (
+                excluir_unidades_administrativas(df)
+            )
             dados = df.to_json(orient="split", date_format="iso")
+            complemento = (
+                f" {registros_administrativos_ignorados} registro(s) "
+                "administrativo(s) foram ignorado(s)."
+                if registros_administrativos_ignorados
+                else ""
+            )
             return dados, no_update, dbc.Alert(
-                f"Importação #{importacao_id} carregada novamente no painel.",
+                (
+                    f"Importação #{importacao_id} carregada novamente no painel."
+                    f"{complemento}"
+                ),
                 color="success",
                 className="mb-0",
             )
