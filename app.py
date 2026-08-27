@@ -9,6 +9,7 @@ import hmac
 import hashlib
 from difflib import SequenceMatcher
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import plotly.express as px
@@ -691,6 +692,41 @@ app = Dash(
     title=NOME_SISTEMA,
 )
 
+app.index_string = """
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <style>
+            @media print {
+                @page { size: A4 landscape; margin: 8mm; }
+                body, #page-content { background: #ffffff !important; }
+                #navbar-container, .nao-imprimir { display: none !important; }
+                .relatorio-impressao { padding: 0 !important; }
+                .relatorio-impressao .card {
+                    box-shadow: none !important;
+                    border: 1px solid #d7e1ed !important;
+                    break-inside: avoid;
+                }
+                .quebra-pagina-impressao { break-before: page; }
+                .js-plotly-plot, .dash-table-container { break-inside: avoid; }
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+"""
+
 server = app.server
 
 _chave_sessao = os.environ.get("FLASK_SECRET_KEY")
@@ -1028,11 +1064,29 @@ def localizar_colunas(df):
 
 
 def converter_datas(serie):
-    return pd.to_datetime(
-        serie,
-        errors="coerce",
-        dayfirst=True,
-    )
+    if pd.api.types.is_datetime64_any_dtype(serie):
+        return pd.to_datetime(serie, errors="coerce")
+
+    texto = serie.fillna("").astype(str).str.strip()
+    resultado = pd.Series(pd.NaT, index=serie.index, dtype="datetime64[ns]")
+
+    formato_iso = texto.str.match(r"^\d{4}-\d{2}-\d{2}")
+    if formato_iso.any():
+        resultado.loc[formato_iso] = pd.to_datetime(
+            texto.loc[formato_iso],
+            errors="coerce",
+            dayfirst=False,
+        )
+
+    formato_brasileiro = ~formato_iso & (texto != "")
+    if formato_brasileiro.any():
+        resultado.loc[formato_brasileiro] = pd.to_datetime(
+            texto.loc[formato_brasileiro],
+            errors="coerce",
+            dayfirst=True,
+        )
+
+    return resultado
 
 
 def aplicar_filtros(
@@ -2307,6 +2361,1193 @@ def enquadramento_mapa(df):
     else:
         zoom = 2.7
     return centro, zoom
+
+
+# ============================================================
+# FUNÇÕES - DASHBOARD E RELATÓRIO PDF
+# ============================================================
+
+def agora_brasilia():
+    try:
+        return datetime.now(ZoneInfo("America/Sao_Paulo"))
+    except Exception:
+        return datetime.now()
+
+
+def ler_dataframe_store(conteudo):
+    if not conteudo:
+        return pd.DataFrame()
+    try:
+        return pd.read_json(
+            io.StringIO(conteudo),
+            orient="split",
+        )
+    except Exception:
+        return pd.DataFrame()
+
+
+def texto_filtros_relatorio(
+    regiao=None,
+    uf=None,
+    unidade=None,
+    data_inicial=None,
+    data_final=None,
+):
+    filtros = []
+    if regiao:
+        filtros.append(f"Região: {regiao}")
+    if uf:
+        filtros.append(f"UF: {uf}")
+    if unidade:
+        filtros.append(f"Unidade/OSC: {unidade}")
+    if data_inicial or data_final:
+        inicio = (
+            pd.to_datetime(data_inicial).strftime("%d/%m/%Y")
+            if data_inicial
+            else "início da base"
+        )
+        fim = (
+            pd.to_datetime(data_final).strftime("%d/%m/%Y")
+            if data_final
+            else "data mais recente"
+        )
+        filtros.append(f"Período: {inicio} a {fim}")
+    return " | ".join(filtros) if filtros else "Todos os dados disponíveis"
+
+
+def filtrar_dados_dashboard_relatorio(
+    dados_cais,
+    dados_unidades,
+    regiao=None,
+    uf=None,
+    unidade=None,
+    data_inicial=None,
+    data_final=None,
+):
+    base_unidades = ler_dataframe_store(dados_unidades)
+    if base_unidades.empty:
+        base_unidades = carregar_base_unidades_mapa()
+    else:
+        base_unidades = padronizar_base_unidades_mapa(base_unidades)
+
+    atendimentos = ler_dataframe_store(dados_cais)
+    integrada_total, _ = consolidar_atendimentos_no_mapa(
+        base_unidades,
+        dados_cais,
+    )
+    unidades_filtradas = integrada_total.copy()
+
+    if regiao:
+        unidades_filtradas = unidades_filtradas[
+            unidades_filtradas["Região"] == regiao
+        ].copy()
+    if uf:
+        unidades_filtradas = unidades_filtradas[
+            unidades_filtradas["UF"] == uf
+        ].copy()
+    if unidade:
+        unidades_filtradas = unidades_filtradas[
+            (unidades_filtradas["Nome da Unidade"] == unidade)
+            | (unidades_filtradas["Nome da OSC"] == unidade)
+        ].copy()
+
+    existe_filtro_geografico = bool(regiao or uf or unidade)
+    if existe_filtro_geografico and not atendimentos.empty:
+        colunas = localizar_colunas(atendimentos)
+        coluna_unidade = colunas.get("unidade")
+        if coluna_unidade:
+            nomes_permitidos = set()
+            for _, linha in unidades_filtradas.iterrows():
+                nomes_permitidos.update(aliases_linha_mapa(linha))
+                reconhecidos = str(
+                    linha.get("Nomes reconhecidos no CAIS", "") or ""
+                )
+                nomes_permitidos.update(
+                    normalizar_nome_mapa(nome)
+                    for nome in reconhecidos.split("|")
+                    if nome.strip()
+                )
+            nomes_atendimentos = serie_texto(
+                atendimentos,
+                coluna_unidade,
+            ).map(normalizar_nome_mapa)
+            atendimentos = atendimentos[
+                nomes_atendimentos.isin(nomes_permitidos)
+            ].copy()
+
+    if not atendimentos.empty:
+        atendimentos = aplicar_filtros(
+            atendimentos,
+            data_inicial=data_inicial,
+            data_final=data_final,
+        )
+
+    base_geografica = unidades_filtradas[
+        COLUNAS_UNIDADES_MAPA
+    ].copy()
+    dados_atendimentos_filtrados = (
+        atendimentos.to_json(
+            orient="split",
+            force_ascii=False,
+            date_format="iso",
+        )
+        if not atendimentos.empty
+        else None
+    )
+    unidades_integradas, metricas_cruzamento = (
+        consolidar_atendimentos_no_mapa(
+            base_geografica,
+            dados_atendimentos_filtrados,
+        )
+    )
+    return unidades_integradas, atendimentos, metricas_cruzamento
+
+
+def resumo_regional_dashboard(unidades):
+    if unidades.empty:
+        return pd.DataFrame(
+            columns=["Região", "Unidades", "Pontos", "Atendimentos"]
+        )
+    base = unidades.copy()
+    base["Região"] = base["Região"].fillna("").astype(str).str.strip()
+    base.loc[base["Região"] == "", "Região"] = "Não informado"
+    base["Ponto mapeável"] = (
+        base["Latitude"].notna()
+        & base["Longitude"].notna()
+    ).astype(int)
+    base["Atendimentos CAIS"] = pd.to_numeric(
+        base["Atendimentos CAIS"],
+        errors="coerce",
+    ).fillna(0).astype(int)
+    resumo = (
+        base.groupby("Região", as_index=False)
+        .agg(
+            Unidades=("Nome para exibição", "size"),
+            Pontos=("Ponto mapeável", "sum"),
+            Atendimentos=("Atendimentos CAIS", "sum"),
+        )
+    )
+    ordem = {nome: indice for indice, nome in enumerate(ORDEM_REGIOES_MAPA)}
+    resumo["_ordem"] = resumo["Região"].map(ordem).fillna(99)
+    return resumo.sort_values("_ordem").drop(columns="_ordem")
+
+
+def criar_mapa_dashboard_relatorio(unidades):
+    pontos = unidades[
+        unidades["Latitude"].notna()
+        & unidades["Longitude"].notna()
+    ].copy()
+    if pontos.empty:
+        return figura_vazia("Nenhuma unidade com coordenadas no recorte")
+
+    pontos["Região"] = pontos["Região"].fillna("").astype(str).str.strip()
+    pontos.loc[pontos["Região"] == "", "Região"] = "Não informado"
+    centro, zoom = enquadramento_mapa(pontos)
+    argumentos = {
+        "data_frame": pontos,
+        "lat": "Latitude",
+        "lon": "Longitude",
+        "color": "Região",
+        "hover_name": "Nome para exibição",
+        "hover_data": {
+            "Município": True,
+            "UF": True,
+            "Fase": True,
+            "Atendimentos CAIS": True,
+            "Latitude": False,
+            "Longitude": False,
+        },
+        "center": centro,
+        "zoom": zoom,
+        "color_discrete_map": CORES_REGIOES_MAPA,
+        "category_orders": {"Região": ORDEM_REGIOES_MAPA},
+    }
+    if hasattr(px, "scatter_map"):
+        figura = px.scatter_map(
+            **argumentos,
+            map_style="carto-positron",
+        )
+    else:
+        figura = px.scatter_mapbox(**argumentos)
+        figura.update_layout(mapbox_style="carto-positron")
+    figura.update_traces(marker={"size": 7, "opacity": 0.84})
+    figura.update_layout(
+        autosize=True,
+        height=540,
+        margin={"l": 0, "r": 0, "t": 0, "b": 0},
+        legend={
+            "title": {"text": "Região"},
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 0.01,
+            "xanchor": "left",
+            "x": 0.01,
+            "bgcolor": "rgba(255,255,255,0.85)",
+        },
+        uirevision="mapa-dashboard-relatorio",
+    )
+    return figura
+
+
+def criar_grafico_regional_dashboard(unidades):
+    resumo = resumo_regional_dashboard(unidades)
+    if resumo.empty:
+        return figura_vazia("Nenhum dado regional no recorte")
+    resumo = resumo.sort_values("Unidades", ascending=True)
+    figura = px.bar(
+        resumo,
+        x="Unidades",
+        y="Região",
+        orientation="h",
+        color="Região",
+        color_discrete_map=CORES_REGIOES_MAPA,
+        text="Unidades",
+        template="plotly_white",
+        hover_data={"Pontos": True, "Atendimentos": True},
+    )
+    figura.update_traces(textposition="outside", cliponaxis=False)
+    figura.update_layout(
+        showlegend=False,
+        xaxis_title="Unidades cadastradas",
+        yaxis_title=None,
+        margin={"l": 15, "r": 45, "t": 15, "b": 45},
+        height=360,
+    )
+    return figura
+
+
+def criar_grafico_top_unidades_dashboard(atendimentos, limite=12):
+    if atendimentos.empty:
+        return figura_vazia("Importe a base do CAIS para gerar o ranking")
+    colunas = localizar_colunas(atendimentos)
+    coluna_unidade = colunas.get("unidade")
+    if not coluna_unidade:
+        return figura_vazia("Campo de unidade/OSC não identificado")
+    contagem = serie_texto(atendimentos, coluna_unidade)
+    contagem = contagem[contagem != ""].value_counts().head(limite)
+    if contagem.empty:
+        return figura_vazia("Nenhuma unidade/OSC identificada")
+    tabela = contagem.reset_index()
+    tabela.columns = ["Unidade / OSC", "Atendimentos"]
+    tabela = tabela.sort_values("Atendimentos", ascending=True)
+    figura = px.bar(
+        tabela,
+        x="Atendimentos",
+        y="Unidade / OSC",
+        orientation="h",
+        text="Atendimentos",
+        template="plotly_white",
+    )
+    figura.update_traces(
+        textposition="outside",
+        marker_color="#1351B4",
+        cliponaxis=False,
+    )
+    figura.update_layout(
+        showlegend=False,
+        xaxis_title="Atendimentos",
+        yaxis_title=None,
+        margin={"l": 15, "r": 45, "t": 15, "b": 45},
+        height=430,
+    )
+    return figura
+
+
+def criar_card_dashboard_relatorio(titulo, valor, icone, cor="#1351B4"):
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.I(
+                    className=f"{icone} fa-lg mb-2",
+                    style={"color": cor},
+                ),
+                html.Div(
+                    str(valor),
+                    className="fs-3 fw-bold",
+                    style={"color": "#071D41"},
+                ),
+                html.Small(titulo, className="text-muted fw-semibold"),
+            ],
+            className="p-3",
+        ),
+        className="h-100 border-0 rounded-4 print-card",
+        style={
+            "backgroundColor": "#F6F9FE",
+            "boxShadow": "0 4px 14px rgba(19,81,180,0.09)",
+        },
+    )
+
+
+def construir_previa_dashboard_relatorio(
+    unidades,
+    atendimentos,
+    texto_filtros,
+):
+    metricas = calcular_metricas(atendimentos) if not atendimentos.empty else {
+        "total": 0,
+        "pessoas": 0,
+        "usuarios": 0,
+        "pendencias": 0,
+    }
+    pontos = int(
+        (
+            unidades["Latitude"].notna()
+            & unidades["Longitude"].notna()
+        ).sum()
+    ) if not unidades.empty else 0
+    resumo_regional = resumo_regional_dashboard(unidades)
+    tabela_unidades = unidades.copy()
+    if not tabela_unidades.empty:
+        tabela_unidades["Atendimentos CAIS"] = pd.to_numeric(
+            tabela_unidades["Atendimentos CAIS"],
+            errors="coerce",
+        ).fillna(0).astype(int)
+        tabela_unidades = tabela_unidades.sort_values(
+            ["Atendimentos CAIS", "Região", "UF"],
+            ascending=[False, True, True],
+        )
+
+    colunas_tabela = [
+        "Região",
+        "UF",
+        "Município",
+        "Nome para exibição",
+        "Fase",
+        "Atendimentos CAIS",
+    ]
+    dados_tabela = (
+        tabela_unidades[colunas_tabela].head(25).to_dict("records")
+        if not tabela_unidades.empty
+        else []
+    )
+
+    return html.Div(
+        [
+            html.Div(
+                [
+                    html.Div(
+                        [
+                            html.H2(
+                                "Dashboard consolidado do Sistema CAIS",
+                                className="fw-bold mb-1",
+                                style={"color": "#071D41"},
+                            ),
+                            html.P(
+                                texto_filtros,
+                                className="text-muted mb-0",
+                            ),
+                        ]
+                    ),
+                    html.Div(
+                        agora_brasilia().strftime("Gerado em %d/%m/%Y às %H:%M"),
+                        className="small text-muted mt-2 mt-md-0",
+                    ),
+                ],
+                className=(
+                    "d-flex flex-column flex-md-row justify-content-between "
+                    "align-items-md-end mb-4"
+                ),
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        criar_card_dashboard_relatorio(
+                            "Unidades no recorte", len(unidades),
+                            "fa-solid fa-building", "#168821",
+                        ),
+                        xs=6, md=4, xl=2, className="mb-3",
+                    ),
+                    dbc.Col(
+                        criar_card_dashboard_relatorio(
+                            "Pontos no mapa", pontos,
+                            "fa-solid fa-location-dot", "#D32F2F",
+                        ),
+                        xs=6, md=4, xl=2, className="mb-3",
+                    ),
+                    dbc.Col(
+                        criar_card_dashboard_relatorio(
+                            "Atendimentos", metricas.get("total", 0),
+                            "fa-solid fa-handshake-angle", "#1351B4",
+                        ),
+                        xs=6, md=4, xl=2, className="mb-3",
+                    ),
+                    dbc.Col(
+                        criar_card_dashboard_relatorio(
+                            "Pessoas identificadas", metricas.get("pessoas", 0),
+                            "fa-solid fa-people-group", "#8E44AD",
+                        ),
+                        xs=6, md=4, xl=2, className="mb-3",
+                    ),
+                    dbc.Col(
+                        criar_card_dashboard_relatorio(
+                            "Usuários do sistema", metricas.get("usuarios", 0),
+                            "fa-solid fa-user-gear", "#E6A700",
+                        ),
+                        xs=6, md=4, xl=2, className="mb-3",
+                    ),
+                    dbc.Col(
+                        criar_card_dashboard_relatorio(
+                            "Pendências", metricas.get("pendencias", 0),
+                            "fa-solid fa-triangle-exclamation", "#C62828",
+                        ),
+                        xs=6, md=4, xl=2, className="mb-3",
+                    ),
+                ],
+                className="g-3 mb-2",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        dbc.Card(
+                            dbc.CardBody(
+                                [
+                                    html.H5(
+                                        "Unidades por região",
+                                        className="fw-bold mb-2",
+                                    ),
+                                    dcc.Graph(
+                                        figure=criar_grafico_regional_dashboard(unidades),
+                                        config={"displayModeBar": False},
+                                        responsive=True,
+                                    ),
+                                ],
+                                className="p-3",
+                            ),
+                            className="border-0 rounded-4 h-100 print-card",
+                        ),
+                        xs=12, lg=5, className="mb-3",
+                    ),
+                    dbc.Col(
+                        dbc.Card(
+                            dbc.CardBody(
+                                [
+                                    html.H5(
+                                        "Mapa das unidades e OSCs",
+                                        className="fw-bold mb-2",
+                                    ),
+                                    dcc.Graph(
+                                        figure=criar_mapa_dashboard_relatorio(unidades),
+                                        config={
+                                            "displayModeBar": False,
+                                            "scrollZoom": True,
+                                        },
+                                        responsive=True,
+                                    ),
+                                ],
+                                className="p-2 p-md-3",
+                            ),
+                            className="border-0 rounded-4 h-100 print-card",
+                        ),
+                        xs=12, lg=7, className="mb-3",
+                    ),
+                ],
+                className="g-3 quebra-pagina-impressao",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        dbc.Card(
+                            dbc.CardBody(
+                                [
+                                    html.H5("Status dos atendimentos", className="fw-bold"),
+                                    dcc.Graph(
+                                        figure=grafico_status(atendimentos),
+                                        config={"displayModeBar": False},
+                                        responsive=True,
+                                    ),
+                                ],
+                                className="p-3",
+                            ),
+                            className="border-0 rounded-4 h-100 print-card",
+                        ),
+                        xs=12, lg=6, className="mb-3",
+                    ),
+                    dbc.Col(
+                        dbc.Card(
+                            dbc.CardBody(
+                                [
+                                    html.H5("Evolução mensal", className="fw-bold"),
+                                    dcc.Graph(
+                                        figure=grafico_temporal(atendimentos, "mes"),
+                                        config={"displayModeBar": False},
+                                        responsive=True,
+                                    ),
+                                ],
+                                className="p-3",
+                            ),
+                            className="border-0 rounded-4 h-100 print-card",
+                        ),
+                        xs=12, lg=6, className="mb-3",
+                    ),
+                ],
+                className="g-3",
+            ),
+            dbc.Card(
+                dbc.CardBody(
+                    [
+                        html.H5("Unidades/OSCs com mais atendimentos", className="fw-bold"),
+                        dcc.Graph(
+                            figure=criar_grafico_top_unidades_dashboard(atendimentos),
+                            config={"displayModeBar": False},
+                            responsive=True,
+                        ),
+                    ],
+                    className="p-3",
+                ),
+                className="border-0 rounded-4 mb-3 print-card",
+            ),
+            dbc.Card(
+                dbc.CardBody(
+                    [
+                        html.H5("Detalhamento das unidades", className="fw-bold mb-1"),
+                        html.P(
+                            (
+                                "A prévia mostra até 25 registros. O PDF baixado "
+                                "inclui todas as unidades do recorte."
+                            ),
+                            className="text-muted mb-3",
+                        ),
+                        dash_table.DataTable(
+                            columns=[
+                                {"name": nome, "id": identificador}
+                                for nome, identificador in [
+                                    ("Região", "Região"),
+                                    ("UF", "UF"),
+                                    ("Município", "Município"),
+                                    ("Unidade / OSC", "Nome para exibição"),
+                                    ("Fase", "Fase"),
+                                    ("Atendimentos", "Atendimentos CAIS"),
+                                ]
+                            ],
+                            data=dados_tabela,
+                            page_size=25,
+                            sort_action="native",
+                            style_table={"overflowX": "auto"},
+                            style_cell={
+                                "textAlign": "left",
+                                "padding": "9px",
+                                "fontSize": "12px",
+                                "whiteSpace": "normal",
+                                "height": "auto",
+                            },
+                            style_header={
+                                "backgroundColor": "#D6E7FF",
+                                "color": "#071D41",
+                                "fontWeight": "bold",
+                            },
+                        ),
+                    ],
+                    className="p-3 p-md-4",
+                ),
+                className="border-0 rounded-4 mb-3 print-card",
+            ),
+            html.Div(
+                [
+                    html.Strong("Leitura regional: "),
+                    (
+                        "; ".join(
+                            f"{linha['Região']}: {int(linha['Unidades'])} unidade(s)"
+                            for _, linha in resumo_regional.iterrows()
+                        )
+                        if not resumo_regional.empty
+                        else "sem dados regionais no recorte"
+                    ),
+                ],
+                className="small text-muted mt-2",
+            ),
+        ],
+        className="relatorio-impressao",
+    )
+
+
+def gerar_pdf_dashboard_bytes(
+    unidades,
+    atendimentos,
+    texto_filtros,
+):
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        KeepTogether,
+        PageBreak,
+        Paragraph,
+        SimpleDocTemplate,
+        Spacer,
+        Table,
+        TableStyle,
+    )
+    from reportlab.graphics.shapes import Circle, Drawing, Path, Rect, String
+    from xml.sax.saxutils import escape
+
+    buffer = io.BytesIO()
+    pagina = landscape(A4)
+    documento = SimpleDocTemplate(
+        buffer,
+        pagesize=pagina,
+        leftMargin=13 * mm,
+        rightMargin=13 * mm,
+        topMargin=18 * mm,
+        bottomMargin=16 * mm,
+        title="Dashboard consolidado do Sistema CAIS",
+        author=NOME_SISTEMA,
+    )
+    estilos = getSampleStyleSheet()
+    estilos.add(
+        ParagraphStyle(
+            name="TituloCAIS",
+            parent=estilos["Title"],
+            fontName="Helvetica-Bold",
+            fontSize=22,
+            leading=26,
+            textColor=colors.HexColor("#071D41"),
+            alignment=TA_LEFT,
+            spaceAfter=5 * mm,
+        )
+    )
+    estilos.add(
+        ParagraphStyle(
+            name="SubtituloCAIS",
+            parent=estilos["Heading2"],
+            fontName="Helvetica-Bold",
+            fontSize=13,
+            leading=16,
+            textColor=colors.HexColor("#1351B4"),
+            spaceBefore=2 * mm,
+            spaceAfter=3 * mm,
+        )
+    )
+    estilos.add(
+        ParagraphStyle(
+            name="TextoCAIS",
+            parent=estilos["BodyText"],
+            fontName="Helvetica",
+            fontSize=8.5,
+            leading=11,
+            textColor=colors.HexColor("#334155"),
+        )
+    )
+    estilos.add(
+        ParagraphStyle(
+            name="TabelaCAIS",
+            parent=estilos["BodyText"],
+            fontName="Helvetica",
+            fontSize=6.5,
+            leading=7.4,
+            textColor=colors.HexColor("#1F2937"),
+        )
+    )
+    estilos.add(
+        ParagraphStyle(
+            name="NumeroCardCAIS",
+            parent=estilos["BodyText"],
+            fontName="Helvetica-Bold",
+            fontSize=17,
+            leading=20,
+            alignment=TA_CENTER,
+            textColor=colors.HexColor("#071D41"),
+        )
+    )
+    estilos.add(
+        ParagraphStyle(
+            name="RotuloCardCAIS",
+            parent=estilos["BodyText"],
+            fontName="Helvetica",
+            fontSize=7.5,
+            leading=9,
+            alignment=TA_CENTER,
+            textColor=colors.HexColor("#4A5B73"),
+        )
+    )
+
+    def numero(valor):
+        return f"{int(valor):,}".replace(",", ".")
+
+    metricas = calcular_metricas(atendimentos) if not atendimentos.empty else {
+        "total": 0,
+        "pessoas": 0,
+        "usuarios": 0,
+        "pendencias": 0,
+    }
+    pontos = int(
+        (
+            unidades["Latitude"].notna()
+            & unidades["Longitude"].notna()
+        ).sum()
+    ) if not unidades.empty else 0
+    resumo_regional = resumo_regional_dashboard(unidades)
+
+    def card_pdf(valor, rotulo):
+        card = Table(
+            [
+                [Paragraph(numero(valor), estilos["NumeroCardCAIS"])],
+                [Paragraph(escape(rotulo), estilos["RotuloCardCAIS"])],
+            ],
+            colWidths=[38 * mm],
+            rowHeights=[10 * mm, 8 * mm],
+        )
+        card.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F1F7FF")),
+                    ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#C5DBF5")),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ]
+            )
+        )
+        return card
+
+    historia = [
+        Paragraph("Dashboard consolidado do Sistema CAIS", estilos["TituloCAIS"]),
+        Paragraph(
+            escape(texto_filtros),
+            estilos["TextoCAIS"],
+        ),
+        Spacer(1, 2 * mm),
+        Paragraph(
+            agora_brasilia().strftime("Gerado em %d/%m/%Y às %H:%M"),
+            estilos["TextoCAIS"],
+        ),
+        Spacer(1, 5 * mm),
+    ]
+    cards = [
+        card_pdf(len(unidades), "Unidades no recorte"),
+        card_pdf(pontos, "Pontos no mapa"),
+        card_pdf(metricas.get("total", 0), "Atendimentos"),
+        card_pdf(metricas.get("pessoas", 0), "Pessoas identificadas"),
+        card_pdf(metricas.get("usuarios", 0), "Usuários do sistema"),
+        card_pdf(metricas.get("pendencias", 0), "Pendências"),
+    ]
+    tabela_cards = Table([cards], colWidths=[42 * mm] * 6, hAlign="LEFT")
+    tabela_cards.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 1.5 * mm),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 1.5 * mm),
+            ]
+        )
+    )
+    historia.extend(
+        [
+            tabela_cards,
+            Spacer(1, 6 * mm),
+            Paragraph("Comparação regional", estilos["SubtituloCAIS"]),
+        ]
+    )
+
+    cabecalho_regional = ["Região", "Unidades", "Pontos", "Atendimentos"]
+    linhas_regionais = [cabecalho_regional]
+    for _, linha in resumo_regional.iterrows():
+        linhas_regionais.append(
+            [
+                linha["Região"],
+                numero(linha["Unidades"]),
+                numero(linha["Pontos"]),
+                numero(linha["Atendimentos"]),
+            ]
+        )
+    if len(linhas_regionais) == 1:
+        linhas_regionais.append(["Sem dados", "0", "0", "0"])
+    tabela_regional = Table(
+        linhas_regionais,
+        colWidths=[44 * mm, 23 * mm, 23 * mm, 27 * mm],
+        repeatRows=1,
+    )
+    tabela_regional.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1351B4")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D7E1ED")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F6F9FE")]),
+                ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+
+    status_linhas = [["Status", "Quantidade"]]
+    colunas_atendimento = localizar_colunas(atendimentos)
+    if not atendimentos.empty and colunas_atendimento.get("status"):
+        status = serie_texto(
+            atendimentos,
+            colunas_atendimento["status"],
+        ).replace("", "Não informado").value_counts()
+        for nome_status, quantidade in status.items():
+            status_linhas.append([str(nome_status), numero(quantidade)])
+    if len(status_linhas) == 1:
+        status_linhas.append(["Sem dados", "0"])
+    tabela_status = Table(
+        status_linhas,
+        colWidths=[70 * mm, 28 * mm],
+        repeatRows=1,
+    )
+    tabela_status.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#168821")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D7E1ED")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F4FBF6")]),
+                ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ]
+        )
+    )
+    comparativo = Table(
+        [[tabela_regional, tabela_status]],
+        colWidths=[125 * mm, 108 * mm],
+        hAlign="LEFT",
+    )
+    comparativo.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (0, 0), 5 * mm),
+                ("RIGHTPADDING", (1, 0), (1, 0), 0),
+            ]
+        )
+    )
+    historia.extend([comparativo, Spacer(1, 5 * mm)])
+
+    col_unidade = colunas_atendimento.get("unidade")
+    ranking = pd.Series(dtype="int64")
+    if col_unidade and not atendimentos.empty:
+        valores = serie_texto(atendimentos, col_unidade)
+        ranking = valores[valores != ""].value_counts().head(10)
+    historia.append(Paragraph("Principais unidades/OSCs", estilos["SubtituloCAIS"]))
+    ranking_linhas = [["Unidade / OSC", "Atendimentos"]]
+    for nome_unidade, quantidade in ranking.items():
+        ranking_linhas.append(
+            [
+                Paragraph(escape(str(nome_unidade)), estilos["TabelaCAIS"]),
+                numero(quantidade),
+            ]
+        )
+    if len(ranking_linhas) == 1:
+        ranking_linhas.append(["Sem dados de atendimentos", "0"])
+    tabela_ranking = Table(
+        ranking_linhas,
+        colWidths=[205 * mm, 30 * mm],
+        repeatRows=1,
+    )
+    tabela_ranking.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#071D41")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D7E1ED")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F6F9FE")]),
+                ("ALIGN", (1, 1), (1, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    historia.extend([tabela_ranking, PageBreak()])
+
+    historia.append(Paragraph("Mapa e distribuição regional", estilos["TituloCAIS"]))
+
+    def coordenada_mapa(longitude, latitude, largura, altura):
+        x = 18 + ((float(longitude) + 74.5) / 40.5) * (largura - 36)
+        y = 30 + ((float(latitude) + 34.5) / 40.8) * (altura - 58)
+        return x, y
+
+    largura_mapa = 340
+    altura_mapa = 345
+    desenho_mapa = Drawing(largura_mapa, altura_mapa)
+    desenho_mapa.add(
+        String(
+            16, altura_mapa - 22,
+            "Localização das unidades CAIS",
+            fontName="Helvetica-Bold",
+            fontSize=11,
+            fillColor=colors.HexColor("#071D41"),
+        )
+    )
+    contorno_brasil = [
+        (-60.1, 5.2), (-55.0, 5.0), (-51.5, 4.2), (-49.8, 1.0),
+        (-50.5, -1.5), (-47.2, -1.8), (-44.0, -2.0), (-41.0, -3.2),
+        (-37.0, -6.0), (-35.0, -8.5), (-36.0, -12.0), (-38.5, -15.5),
+        (-40.5, -19.5), (-43.0, -23.0), (-47.5, -29.0), (-52.5, -33.5),
+        (-56.5, -30.5), (-58.0, -26.0), (-60.5, -22.0), (-62.5, -18.0),
+        (-66.0, -14.0), (-70.0, -12.0), (-73.8, -8.0), (-72.0, -4.0),
+        (-69.0, -1.0), (-66.0, 1.5), (-62.0, 2.5), (-60.1, 5.2),
+    ]
+    caminho = Path()
+    primeiro_x, primeiro_y = coordenada_mapa(
+        contorno_brasil[0][0], contorno_brasil[0][1],
+        largura_mapa, altura_mapa,
+    )
+    caminho.moveTo(primeiro_x, primeiro_y)
+    for longitude, latitude in contorno_brasil[1:]:
+        x, y = coordenada_mapa(longitude, latitude, largura_mapa, altura_mapa)
+        caminho.lineTo(x, y)
+    caminho.closePath()
+    caminho.fillColor = colors.HexColor("#EAF4FF")
+    caminho.strokeColor = colors.HexColor("#7BA5D6")
+    caminho.strokeWidth = 1.1
+    desenho_mapa.add(caminho)
+
+    pontos_pdf = unidades[
+        unidades["Latitude"].notna()
+        & unidades["Longitude"].notna()
+    ] if not unidades.empty else pd.DataFrame()
+    for _, linha in pontos_pdf.iterrows():
+        x, y = coordenada_mapa(
+            linha["Longitude"], linha["Latitude"],
+            largura_mapa, altura_mapa,
+        )
+        cor = CORES_REGIOES_MAPA.get(
+            str(linha.get("Região", "")),
+            CORES_REGIOES_MAPA["Não informado"],
+        )
+        desenho_mapa.add(
+            Circle(
+                x, y, 2.7,
+                fillColor=colors.HexColor(cor),
+                strokeColor=colors.white,
+                strokeWidth=0.5,
+            )
+        )
+
+    legenda_y = 10
+    legenda_x = 15
+    for nome_regiao in ORDEM_REGIOES_MAPA[:5]:
+        desenho_mapa.add(
+            Circle(
+                legenda_x, legenda_y + 2, 2.7,
+                fillColor=colors.HexColor(CORES_REGIOES_MAPA[nome_regiao]),
+                strokeColor=None,
+            )
+        )
+        desenho_mapa.add(
+            String(
+                legenda_x + 6, legenda_y,
+                nome_regiao,
+                fontName="Helvetica",
+                fontSize=6.2,
+                fillColor=colors.HexColor("#334155"),
+            )
+        )
+        legenda_x += 62
+
+    largura_barras = 340
+    altura_barras = 345
+    desenho_barras = Drawing(largura_barras, altura_barras)
+    desenho_barras.add(
+        String(
+            16, altura_barras - 22,
+            "Unidades por região",
+            fontName="Helvetica-Bold",
+            fontSize=11,
+            fillColor=colors.HexColor("#071D41"),
+        )
+    )
+    maximo = max(
+        resumo_regional["Unidades"].max() if not resumo_regional.empty else 0,
+        1,
+    )
+    posicao_y = altura_barras - 70
+    for _, linha in resumo_regional.sort_values("Unidades", ascending=False).iterrows():
+        nome_regiao = str(linha["Região"])
+        valor = int(linha["Unidades"])
+        cor = CORES_REGIOES_MAPA.get(
+            nome_regiao,
+            CORES_REGIOES_MAPA["Não informado"],
+        )
+        desenho_barras.add(
+            String(
+                16, posicao_y + 6,
+                nome_regiao,
+                fontName="Helvetica-Bold",
+                fontSize=8,
+                fillColor=colors.HexColor("#334155"),
+            )
+        )
+        largura = 190 * (valor / maximo)
+        desenho_barras.add(
+            Rect(
+                108, posicao_y, largura, 17,
+                rx=4, ry=4,
+                fillColor=colors.HexColor(cor),
+                strokeColor=None,
+            )
+        )
+        desenho_barras.add(
+            String(
+                min(108 + largura + 7, 315), posicao_y + 5,
+                numero(valor),
+                fontName="Helvetica-Bold",
+                fontSize=8,
+                fillColor=colors.HexColor("#071D41"),
+            )
+        )
+        posicao_y -= 48
+    total_unidades = int(resumo_regional["Unidades"].sum()) if not resumo_regional.empty else 0
+    total_atendimentos = int(resumo_regional["Atendimentos"].sum()) if not resumo_regional.empty else 0
+    desenho_barras.add(
+        String(
+            16, 45,
+            f"Total: {numero(total_unidades)} unidade(s)",
+            fontName="Helvetica-Bold",
+            fontSize=9,
+            fillColor=colors.HexColor("#071D41"),
+        )
+    )
+    desenho_barras.add(
+        String(
+            16, 28,
+            f"Atendimentos vinculados: {numero(total_atendimentos)}",
+            fontName="Helvetica",
+            fontSize=8,
+            fillColor=colors.HexColor("#4A5B73"),
+        )
+    )
+    painel_mapa = Table(
+        [[desenho_mapa, desenho_barras]],
+        colWidths=[118 * mm, 118 * mm],
+        hAlign="LEFT",
+    )
+    painel_mapa.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F6F9FE")),
+                ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#C5DBF5")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D7E1ED")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (0, 0), 5 * mm),
+                ("RIGHTPADDING", (1, 0), (1, 0), 0),
+            ]
+        )
+    )
+    historia.extend(
+        [
+            Paragraph(
+                "Os pontos representam unidades com coordenadas válidas. As cores identificam as regiões brasileiras.",
+                estilos["TextoCAIS"],
+            ),
+            Spacer(1, 4 * mm),
+            painel_mapa,
+            PageBreak(),
+            Paragraph("Detalhamento das unidades", estilos["TituloCAIS"]),
+            Paragraph(
+                "Tabela completa do cadastro geográfico no recorte selecionado. O relatório não apresenta nomes de pessoas atendidas.",
+                estilos["TextoCAIS"],
+            ),
+            Spacer(1, 4 * mm),
+        ]
+    )
+
+    cabecalho = [
+        "Região", "UF", "Município", "Unidade / OSC",
+        "Fase", "Atendimentos",
+    ]
+    linhas_detalhe = [cabecalho]
+    tabela_detalhe = unidades.copy()
+    if not tabela_detalhe.empty:
+        tabela_detalhe["Atendimentos CAIS"] = pd.to_numeric(
+            tabela_detalhe["Atendimentos CAIS"],
+            errors="coerce",
+        ).fillna(0).astype(int)
+        tabela_detalhe = tabela_detalhe.sort_values(
+            ["Região", "UF", "Município", "Nome para exibição"]
+        )
+        for _, linha in tabela_detalhe.iterrows():
+            linhas_detalhe.append(
+                [
+                    Paragraph(escape(str(linha.get("Região", ""))), estilos["TabelaCAIS"]),
+                    Paragraph(escape(str(linha.get("UF", ""))), estilos["TabelaCAIS"]),
+                    Paragraph(escape(str(linha.get("Município", ""))), estilos["TabelaCAIS"]),
+                    Paragraph(escape(str(linha.get("Nome para exibição", ""))), estilos["TabelaCAIS"]),
+                    Paragraph(escape(str(linha.get("Fase", ""))), estilos["TabelaCAIS"]),
+                    numero(linha.get("Atendimentos CAIS", 0)),
+                ]
+            )
+    if len(linhas_detalhe) == 1:
+        linhas_detalhe.append(["-", "-", "Sem dados", "-", "-", "0"])
+    detalhe = Table(
+        linhas_detalhe,
+        colWidths=[28 * mm, 12 * mm, 37 * mm, 85 * mm, 52 * mm, 25 * mm],
+        repeatRows=1,
+        hAlign="LEFT",
+    )
+    detalhe.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#071D41")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 7.5),
+                ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#D7E1ED")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F6F9FE")]),
+                ("ALIGN", (-1, 1), (-1, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 2.8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2.8),
+            ]
+        )
+    )
+    historia.extend(
+        [
+            detalhe,
+            Spacer(1, 4 * mm),
+            Paragraph(
+                "Documento gerado automaticamente pelo Monitoramento Cidadania. Mantenha o arquivo em ambiente institucional protegido.",
+                estilos["TextoCAIS"],
+            ),
+        ]
+    )
+
+    def cabecalho_rodape(canvas, doc):
+        canvas.saveState()
+        largura_pagina, altura_pagina = pagina
+        canvas.setFillColor(colors.HexColor("#071D41"))
+        canvas.rect(0, altura_pagina - 10 * mm, largura_pagina, 10 * mm, fill=1, stroke=0)
+        canvas.setFillColor(colors.HexColor("#FFCD07"))
+        canvas.rect(0, altura_pagina - 10.8 * mm, largura_pagina, 0.8 * mm, fill=1, stroke=0)
+        canvas.setFont("Helvetica-Bold", 8)
+        canvas.setFillColor(colors.white)
+        canvas.drawString(13 * mm, altura_pagina - 6.5 * mm, NOME_SISTEMA)
+        canvas.setFont("Helvetica", 7)
+        canvas.setFillColor(colors.HexColor("#4A5B73"))
+        canvas.drawString(13 * mm, 8 * mm, "Dashboard consolidado - Sistema CAIS")
+        canvas.drawRightString(
+            largura_pagina - 13 * mm,
+            8 * mm,
+            f"Página {doc.page}",
+        )
+        canvas.restoreState()
+
+    documento.build(
+        historia,
+        onFirstPage=cabecalho_rodape,
+        onLaterPages=cabecalho_rodape,
+    )
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 def classificar_demanda(titulo):
@@ -3864,7 +5105,7 @@ navbar = dbc.Navbar(
                     dbc.NavItem(dbc.NavLink("Usuários", href="/usuarios", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
                     dbc.NavItem(dbc.NavLink("Auditoria", href="/auditoria", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
                     dbc.NavItem(dbc.NavLink("Base de Dados", href="/base", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
-                    dbc.NavItem(dbc.NavLink("Relatórios", href="/relatorios", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
+                    dbc.NavItem(dbc.NavLink("Relatório PDF", href="/relatorios", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
                     dbc.NavItem(
                         dbc.NavLink(
                             [html.I(className="fa-solid fa-arrow-right-from-bracket me-2"), "Sair"],
@@ -7477,13 +8718,149 @@ mapa_unidades_layout = dbc.Container(
 )
 
 
-relatorios_layout = pagina_em_construcao(
-    "Relatórios",
-    (
-        "A geração de relatórios por unidade e período "
-        "será adicionada nesta área."
-    ),
-    "fa-solid fa-file-lines",
+relatorios_layout = dbc.Container(
+    [
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        html.H1(
+                            "Dashboard e Relatório PDF",
+                            className="fw-bold mb-2",
+                            style={"color": "#071D41"},
+                        ),
+                        html.P(
+                            (
+                                "Visualize o painel consolidado, aplique recortes e "
+                                "gere um PDF multipágina com indicadores, mapa, "
+                                "comparações regionais, rankings e tabelas."
+                            ),
+                            className="text-muted fs-5 mb-0",
+                        ),
+                    ],
+                    xs=12,
+                    lg=7,
+                ),
+                dbc.Col(
+                    [
+                        dbc.Button(
+                            [
+                                html.I(className="fa-solid fa-file-pdf me-2"),
+                                "Baixar PDF consolidado",
+                            ],
+                            id="botao-baixar-dashboard-pdf",
+                            color="danger",
+                            className="w-100 mb-2",
+                        ),
+                        dbc.Button(
+                            [
+                                html.I(className="fa-solid fa-print me-2"),
+                                "Imprimir / Salvar como PDF",
+                            ],
+                            id="botao-imprimir-dashboard",
+                            color="primary",
+                            outline=True,
+                            className="w-100",
+                        ),
+                        dcc.Download(id="download-dashboard-pdf"),
+                        html.Div(id="saida-impressao-relatorio"),
+                    ],
+                    xs=12,
+                    lg=5,
+                    className="mt-3 mt-lg-0 nao-imprimir",
+                ),
+            ],
+            className="g-3 align-items-end mb-4",
+        ),
+        dbc.Alert(
+            [
+                html.I(className="fa-solid fa-shield-halved me-2"),
+                html.Strong("Relatório institucional: "),
+                (
+                    "o documento apresenta dados consolidados e não inclui nomes "
+                    "das pessoas atendidas. Mantenha o PDF em ambiente protegido."
+                ),
+            ],
+            color="warning",
+            className="rounded-4 nao-imprimir",
+        ),
+        dbc.Card(
+            dbc.CardBody(
+                [
+                    html.H5("Filtros do relatório", className="fw-bold mb-3"),
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    dbc.Label("Região", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="filtro-regiao-relatorio",
+                                        placeholder="Todas as regiões",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12, sm=6, xl=3, className="mb-3",
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label("UF", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="filtro-uf-relatorio",
+                                        placeholder="Todas as UFs",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12, sm=6, xl=3, className="mb-3",
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label("Unidade ou OSC", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="filtro-unidade-relatorio",
+                                        placeholder="Todas as unidades / OSCs",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12, sm=6, xl=3, className="mb-3",
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label("Período", className="fw-semibold"),
+                                    dcc.DatePickerRange(
+                                        id="filtro-periodo-relatorio",
+                                        display_format="DD/MM/YYYY",
+                                        start_date_placeholder_text="Data inicial",
+                                        end_date_placeholder_text="Data final",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12, sm=6, xl=3, className="mb-3",
+                            ),
+                        ],
+                        className="g-3",
+                    ),
+                    dbc.Button(
+                        [
+                            html.I(className="fa-solid fa-filter-circle-xmark me-2"),
+                            "Limpar filtros",
+                        ],
+                        id="botao-limpar-filtros-relatorio",
+                        color="secondary",
+                        outline=True,
+                    ),
+                ],
+                className="p-4",
+            ),
+            className="shadow-sm border-0 rounded-4 mb-4 nao-imprimir",
+        ),
+        html.Div(id="mensagem-pdf-relatorio", className="mb-3 nao-imprimir"),
+        dcc.Loading(
+            html.Div(id="conteudo-dashboard-relatorio"),
+            type="circle",
+        ),
+    ],
+    fluid=True,
+    className="px-2 px-md-4 pb-5",
 )
 
 
@@ -11119,6 +12496,204 @@ def atualizar_mapa_unidades(
         [{"name": coluna, "id": coluna} for coluna in colunas_tabela],
         tabela.to_dict("records"),
     )
+
+
+# ============================================================
+# CALLBACKS - DASHBOARD E RELATÓRIO PDF
+# ============================================================
+
+@app.callback(
+    [
+        Output("filtro-regiao-relatorio", "options"),
+        Output("filtro-uf-relatorio", "options"),
+        Output("filtro-unidade-relatorio", "options"),
+    ],
+    Input("dados-unidades-mapa", "data"),
+)
+def carregar_filtros_dashboard_relatorio(dados_unidades):
+    base = ler_dataframe_store(dados_unidades)
+    if base.empty:
+        base = carregar_base_unidades_mapa()
+    else:
+        base = padronizar_base_unidades_mapa(base)
+    nomes = set()
+    for coluna in ["Nome da Unidade", "Nome da OSC"]:
+        for valor in serie_texto(base, coluna):
+            if not valor_generico_mapa(valor):
+                nomes.add(valor)
+    return (
+        criar_opcoes(valores_unicos(base, "Região")),
+        criar_opcoes(valores_unicos(base, "UF")),
+        criar_opcoes(sorted(nomes, key=lambda valor: valor.lower())),
+    )
+
+
+@app.callback(
+    [
+        Output("filtro-regiao-relatorio", "value"),
+        Output("filtro-uf-relatorio", "value"),
+        Output("filtro-unidade-relatorio", "value"),
+        Output("filtro-periodo-relatorio", "start_date"),
+        Output("filtro-periodo-relatorio", "end_date"),
+    ],
+    Input("botao-limpar-filtros-relatorio", "n_clicks"),
+    prevent_initial_call=True,
+)
+def limpar_filtros_dashboard_relatorio(n_clicks):
+    return None, None, None, None, None
+
+
+@app.callback(
+    Output("conteudo-dashboard-relatorio", "children"),
+    [
+        Input("dados-cais", "data"),
+        Input("dados-unidades-mapa", "data"),
+        Input("filtro-regiao-relatorio", "value"),
+        Input("filtro-uf-relatorio", "value"),
+        Input("filtro-unidade-relatorio", "value"),
+        Input("filtro-periodo-relatorio", "start_date"),
+        Input("filtro-periodo-relatorio", "end_date"),
+    ],
+)
+def atualizar_dashboard_relatorio(
+    dados_cais,
+    dados_unidades,
+    regiao,
+    uf,
+    unidade,
+    data_inicial,
+    data_final,
+):
+    unidades, atendimentos, _ = filtrar_dados_dashboard_relatorio(
+        dados_cais,
+        dados_unidades,
+        regiao,
+        uf,
+        unidade,
+        data_inicial,
+        data_final,
+    )
+    filtros = texto_filtros_relatorio(
+        regiao,
+        uf,
+        unidade,
+        data_inicial,
+        data_final,
+    )
+    return construir_previa_dashboard_relatorio(
+        unidades,
+        atendimentos,
+        filtros,
+    )
+
+
+@app.callback(
+    [
+        Output("download-dashboard-pdf", "data"),
+        Output("mensagem-pdf-relatorio", "children"),
+    ],
+    Input("botao-baixar-dashboard-pdf", "n_clicks"),
+    [
+        State("dados-cais", "data"),
+        State("dados-unidades-mapa", "data"),
+        State("filtro-regiao-relatorio", "value"),
+        State("filtro-uf-relatorio", "value"),
+        State("filtro-unidade-relatorio", "value"),
+        State("filtro-periodo-relatorio", "start_date"),
+        State("filtro-periodo-relatorio", "end_date"),
+    ],
+    prevent_initial_call=True,
+)
+def baixar_dashboard_pdf(
+    n_clicks,
+    dados_cais,
+    dados_unidades,
+    regiao,
+    uf,
+    unidade,
+    data_inicial,
+    data_final,
+):
+    try:
+        unidades, atendimentos, _ = filtrar_dados_dashboard_relatorio(
+            dados_cais,
+            dados_unidades,
+            regiao,
+            uf,
+            unidade,
+            data_inicial,
+            data_final,
+        )
+        filtros = texto_filtros_relatorio(
+            regiao,
+            uf,
+            unidade,
+            data_inicial,
+            data_final,
+        )
+        pdf = gerar_pdf_dashboard_bytes(
+            unidades,
+            atendimentos,
+            filtros,
+        )
+        nome_arquivo = (
+            "dashboard_cais_"
+            + agora_brasilia().strftime("%Y%m%d_%H%M")
+            + ".pdf"
+        )
+        return (
+            dcc.send_bytes(pdf, nome_arquivo),
+            dbc.Alert(
+                [
+                    html.I(className="fa-solid fa-circle-check me-2"),
+                    "PDF consolidado gerado com sucesso.",
+                ],
+                color="success",
+                className="rounded-4 mb-0",
+            ),
+        )
+    except ImportError:
+        return (
+            no_update,
+            dbc.Alert(
+                [
+                    html.Strong("Dependência necessária: "),
+                    "adicione reportlab ao requirements.txt e publique novamente.",
+                ],
+                color="danger",
+                className="rounded-4 mb-0",
+            ),
+        )
+    except Exception as erro:
+        return (
+            no_update,
+            dbc.Alert(
+                [
+                    html.Strong("Não foi possível gerar o PDF. "),
+                    str(erro),
+                ],
+                color="danger",
+                className="rounded-4 mb-0",
+            ),
+        )
+
+
+app.clientside_callback(
+    """
+    function(n_clicks) {
+        if (!n_clicks) {
+            return window.dash_clientside.no_update;
+        }
+        window.setTimeout(function() {
+            window.print();
+        }, 350);
+        return "";
+    }
+    """,
+    Output("saida-impressao-relatorio", "children"),
+    Input("botao-imprimir-dashboard", "n_clicks"),
+    prevent_initial_call=True,
+)
 
 
 # ============================================================
