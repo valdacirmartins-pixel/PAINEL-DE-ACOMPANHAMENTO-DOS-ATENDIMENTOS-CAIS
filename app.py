@@ -713,6 +713,21 @@ app.index_string = """
                 }
                 .quebra-pagina-impressao { break-before: page; }
                 .js-plotly-plot, .dash-table-container { break-inside: avoid; }
+                .grafico-relatorio-mapa,
+                .grafico-relatorio-regional {
+                    height: 112mm !important;
+                    min-height: 112mm !important;
+                    width: 100% !important;
+                }
+                .grafico-relatorio-mapa .js-plotly-plot,
+                .grafico-relatorio-mapa .plot-container,
+                .grafico-relatorio-mapa .svg-container,
+                .grafico-relatorio-regional .js-plotly-plot,
+                .grafico-relatorio-regional .plot-container,
+                .grafico-relatorio-regional .svg-container {
+                    height: 100% !important;
+                    width: 100% !important;
+                }
             }
         </style>
     </head>
@@ -799,7 +814,7 @@ def registrar_importacao(tipo, nomes_arquivos, conteudos_arquivos, dataframe, pe
     nomes_arquivos = list(nomes_arquivos or [])
     conteudos_arquivos = list(conteudos_arquivos or [])
     if tipo == "Atendimentos":
-        dataframe, _ = excluir_unidades_administrativas(dataframe)
+        dataframe, _ = excluir_unidades_ignoradas(dataframe)
     quantidade_registros = len(dataframe)
     quantidade_unidades = 0
 
@@ -1099,7 +1114,7 @@ def aplicar_filtros(
     data_inicial=None,
     data_final=None,
 ):
-    df_filtrado, _ = excluir_unidades_administrativas(df)
+    df_filtrado, _ = excluir_unidades_ignoradas(df)
     colunas = localizar_colunas(df_filtrado)
 
     if unidade and colunas["unidade"]:
@@ -1277,7 +1292,7 @@ def calcular_pendencias(df):
 
 
 def calcular_metricas(df):
-    df, _ = excluir_unidades_administrativas(df)
+    df, _ = excluir_unidades_ignoradas(df)
     colunas = localizar_colunas(df)
 
     total = len(df)
@@ -1919,17 +1934,34 @@ def normalizar_nome_mapa(texto):
     return re.sub(r"\s+", " ", texto).strip()
 
 
-# Unidades usadas somente pela equipe que administra o Sistema CAIS.
-# Os registros permanecem nos arquivos originais, mas são ignorados em
-# contagens, filtros, gráficos, mapa, tabelas e relatórios do painel.
-UNIDADES_ADMINISTRATIVAS_CAIS = (
+# Unidades que não devem compor os indicadores do monitoramento.
+# Inclui ambientes administrativos e unidades retiradas do recorte.
+# Os registros permanecem nos arquivos originais enviados, mas são ignorados
+# em contagens, filtros, gráficos, mapa, tabelas e relatórios do painel.
+UNIDADES_IGNORADAS_CAIS = (
     "CIDADANIA POP RUA (DF) - Administração Teste",
     "Cidadania Pop Rua: CAIS + PAR (administrativo)",
+    # CARITAS BRASILEIRA (SC) 1 - ALINE SILVA DE SALLES
+    "CIDADANIA POP RUA (SC) - CARITAS BRASILEIRA (SC) 1 - ALINE SILVA DE SALLES",
+    "CARITAS BRASILEIRA (SC) 1 - ALINE SILVA DE SALLES",
+    "Cidadania PopRua - Aline Silva de Salles",
+    # UFRJ 4 - ESPAÇO DA DIGNIDADE
+    "CIDADANIA POP RUA (RJ) - UNIVERSIDADE FEDERAL DO RIO DE JANEIRO (UFRJ) 4 - ESPACO DA DIGNIDADE",
+    "UNIVERSIDADE FEDERAL DO RIO DE JANEIRO (UFRJ) 4 - ESPACO DA DIGNIDADE",
+    "Cidadania PopRua - Espaço da Dignidade",
+    # NÚCLEO PERIFÉRICO - NOME FANTASIA
+    "CIDADANIA POP RUA (PR) - ASSOCIACAO DE DESENVOLVIMENTO HUMANO E FOMENTO CULTURAL (NUCLEO PERIFERICO) - NOME FANTASIA",
+    "ASSOCIACAO DE DESENVOLVIMENTO HUMANO E FOMENTO CULTURAL (NUCLEO PERIFERICO) - NOME FANTASIA",
+    "ASSOCIACAO DE DESENVOLVIMENTO HUMANO E FOMENTO CULTURAL (NUCLEO PERIFERICO)",
+    # INSTITUTO BECEI 2 - CARLINHOS ARQUINO
+    "CIDADANIA POP RUA (SP) - INSTITUTO BECEI 2 - CARLINHOS ARQUINO",
+    "INSTITUTO BECEI 2 - CARLINHOS ARQUINO",
+    "Cidadania PopRua - Carlinhos Arquino",
 )
 
-UNIDADES_ADMINISTRATIVAS_NORMALIZADAS = frozenset(
+UNIDADES_IGNORADAS_NORMALIZADAS = frozenset(
     normalizar_nome_mapa(nome)
-    for nome in UNIDADES_ADMINISTRATIVAS_CAIS
+    for nome in UNIDADES_IGNORADAS_CAIS
 )
 
 COLUNAS_REFERENCIA_UNIDADE_CAIS = frozenset(
@@ -1944,7 +1976,7 @@ COLUNAS_REFERENCIA_UNIDADE_CAIS = frozenset(
 )
 
 
-def mascara_unidades_administrativas(df):
+def mascara_unidades_ignoradas(df):
     if df is None or df.empty:
         indice = df.index if isinstance(df, pd.DataFrame) else None
         return pd.Series(False, index=indice, dtype=bool)
@@ -1955,18 +1987,18 @@ def mascara_unidades_administrativas(df):
             continue
         valores = serie_texto(df, coluna).map(normalizar_nome_mapa)
         mascara = mascara | valores.isin(
-            UNIDADES_ADMINISTRATIVAS_NORMALIZADAS
+            UNIDADES_IGNORADAS_NORMALIZADAS
         )
     return mascara
 
 
-def excluir_unidades_administrativas(df):
+def excluir_unidades_ignoradas(df):
     if df is None:
         return pd.DataFrame(), 0
     if df.empty:
         return df.copy(), 0
 
-    mascara = mascara_unidades_administrativas(df)
+    mascara = mascara_unidades_ignoradas(df)
     quantidade = int(mascara.sum())
     return df.loc[~mascara].copy(), quantidade
 
@@ -2200,7 +2232,7 @@ def padronizar_base_unidades_mapa(df):
     resultado = pd.DataFrame(registros, columns=COLUNAS_UNIDADES_MAPA)
     if not resultado.empty:
         resultado = resultado.drop_duplicates().reset_index(drop=True)
-        resultado, _ = excluir_unidades_administrativas(resultado)
+        resultado, _ = excluir_unidades_ignoradas(resultado)
         resultado = resultado.reset_index(drop=True)
     return resultado
 
@@ -2306,7 +2338,7 @@ def consolidar_atendimentos_no_mapa(base_unidades, dados_cais):
     except Exception:
         return unidades, metricas
 
-    atendimentos, _ = excluir_unidades_administrativas(atendimentos)
+    atendimentos, _ = excluir_unidades_ignoradas(atendimentos)
 
     colunas = localizar_colunas(atendimentos)
     coluna_unidade = colunas.get("unidade")
@@ -2441,7 +2473,7 @@ def ler_dataframe_store(conteudo):
             io.StringIO(conteudo),
             orient="split",
         )
-        dataframe, _ = excluir_unidades_administrativas(dataframe)
+        dataframe, _ = excluir_unidades_ignoradas(dataframe)
         return dataframe
     except Exception:
         return pd.DataFrame()
@@ -2883,7 +2915,10 @@ def construir_previa_dashboard_relatorio(
                                             "responsive": True,
                                         },
                                         responsive=True,
-                                        className="grafico-relatorio-principal",
+                                        className=(
+                                            "grafico-relatorio-principal "
+                                            "grafico-relatorio-regional"
+                                        ),
                                         style={
                                             "width": "100%",
                                             "height": "clamp(420px, 50vh, 540px)",
@@ -2913,7 +2948,10 @@ def construir_previa_dashboard_relatorio(
                                             "responsive": True,
                                         },
                                         responsive=True,
-                                        className="grafico-relatorio-principal",
+                                        className=(
+                                            "grafico-relatorio-principal "
+                                            "grafico-relatorio-mapa"
+                                        ),
                                         style={
                                             "width": "100%",
                                             "height": "clamp(420px, 50vh, 540px)",
@@ -3347,7 +3385,6 @@ def gerar_pdf_dashboard_bytes(
     if col_unidade and not atendimentos.empty:
         valores = serie_texto(atendimentos, col_unidade)
         ranking = valores[valores != ""].value_counts().head(10)
-    historia.append(Paragraph("Principais unidades/OSCs", estilos["SubtituloCAIS"]))
     ranking_linhas = [["Unidade / OSC", "Atendimentos"]]
     for nome_unidade, quantidade in ranking.items():
         ranking_linhas.append(
@@ -3374,22 +3411,59 @@ def gerar_pdf_dashboard_bytes(
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F6F9FE")]),
                 ("ALIGN", (1, 1), (1, -1), "RIGHT"),
                 ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
             ]
         )
     )
-    historia.extend([tabela_ranking, PageBreak()])
+    historia.extend(
+        [
+            KeepTogether(
+                [
+                    Paragraph(
+                        "Principais unidades/OSCs",
+                        estilos["SubtituloCAIS"],
+                    ),
+                    tabela_ranking,
+                ]
+            ),
+            PageBreak(),
+        ]
+    )
 
     historia.append(Paragraph("Mapa e distribuição regional", estilos["TituloCAIS"]))
 
     def coordenada_mapa(longitude, latitude, largura, altura):
-        x = 18 + ((float(longitude) + 74.5) / 40.5) * (largura - 36)
-        y = 30 + ((float(latitude) + 34.5) / 40.8) * (altura - 58)
+        # Usa a mesma escala nos dois eixos para o contorno do Brasil não
+        # ser esticado horizontalmente ou achatado verticalmente no PDF.
+        longitude_minima, longitude_maxima = -74.5, -34.0
+        latitude_minima, latitude_maxima = -34.5, 6.3
+        margem_x = 18
+        margem_inferior = 34
+        margem_superior = 44
+        largura_util = largura - (2 * margem_x)
+        altura_util = altura - margem_inferior - margem_superior
+        escala = min(
+            largura_util / (longitude_maxima - longitude_minima),
+            altura_util / (latitude_maxima - latitude_minima),
+        )
+        largura_projetada = (
+            longitude_maxima - longitude_minima
+        ) * escala
+        altura_projetada = (
+            latitude_maxima - latitude_minima
+        ) * escala
+        origem_x = margem_x + (largura_util - largura_projetada) / 2
+        origem_y = (
+            margem_inferior
+            + (altura_util - altura_projetada) / 2
+        )
+        x = origem_x + (float(longitude) - longitude_minima) * escala
+        y = origem_y + (float(latitude) - latitude_minima) * escala
         return x, y
 
     largura_mapa = 340
-    altura_mapa = 345
+    altura_mapa = 380
     desenho_mapa = Drawing(largura_mapa, altura_mapa)
     desenho_mapa.add(
         String(
@@ -3468,7 +3542,7 @@ def gerar_pdf_dashboard_bytes(
         legenda_x += 62
 
     largura_barras = 340
-    altura_barras = 345
+    altura_barras = 380
     desenho_barras = Drawing(largura_barras, altura_barras)
     desenho_barras.add(
         String(
@@ -9323,13 +9397,13 @@ def processar_upload_home(
             sort=False,
         )
 
-        df, registros_administrativos_ignorados = (
-            excluir_unidades_administrativas(df)
+        df, registros_unidades_ignorados = (
+            excluir_unidades_ignoradas(df)
         )
 
         if df.empty:
             raise ValueError(
-                "A base contém somente registros das unidades administrativas."
+                "A base contém somente registros de unidades excluídas do monitoramento."
             )
 
         quantidade_linhas = len(
@@ -9439,17 +9513,17 @@ def processar_upload_home(
             ),
         ]
 
-        if registros_administrativos_ignorados:
+        if registros_unidades_ignorados:
             mensagem_conteudo.extend(
                 [
                     html.Br(),
                     html.Small(
                         [
                             html.Strong(
-                                "Registros administrativos ignorados: "
+                                "Registros de unidades excluídas: "
                             ),
                             (
-                                f"{registros_administrativos_ignorados}. "
+                                f"{registros_unidades_ignorados}. "
                                 "Eles não entram nos indicadores, gráficos, "
                                 "mapa, tabelas ou relatórios."
                             ),
@@ -12105,14 +12179,14 @@ def carregar_importacao_salva(n_clicks, importacao_id):
     try:
         if registro["tipo"] == "Atendimentos":
             df = pd.read_csv(caminho, encoding="utf-8-sig", sep=";")
-            df, registros_administrativos_ignorados = (
-                excluir_unidades_administrativas(df)
+            df, registros_unidades_ignorados = (
+                excluir_unidades_ignoradas(df)
             )
             dados = df.to_json(orient="split", date_format="iso")
             complemento = (
-                f" {registros_administrativos_ignorados} registro(s) "
-                "administrativo(s) foram ignorado(s)."
-                if registros_administrativos_ignorados
+                f" {registros_unidades_ignorados} registro(s) de "
+                "unidades excluídas foram ignorado(s)."
+                if registros_unidades_ignorados
                 else ""
             )
             return dados, no_update, dbc.Alert(
