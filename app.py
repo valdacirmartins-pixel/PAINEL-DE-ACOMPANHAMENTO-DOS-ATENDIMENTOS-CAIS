@@ -2630,13 +2630,22 @@ def criar_grafico_top_unidades_dashboard(atendimentos, limite=12):
     tabela = contagem.reset_index()
     tabela.columns = ["Unidade / OSC", "Atendimentos"]
     tabela = tabela.sort_values("Atendimentos", ascending=True)
+    tabela["Rótulo"] = tabela["Unidade / OSC"].apply(
+        lambda nome: (
+            str(nome)
+            if len(str(nome)) <= 68
+            else f"{str(nome)[:65].rstrip()}…"
+        )
+    )
     figura = px.bar(
         tabela,
         x="Atendimentos",
-        y="Unidade / OSC",
+        y="Rótulo",
         orientation="h",
         text="Atendimentos",
         template="plotly_white",
+        hover_name="Unidade / OSC",
+        hover_data={"Rótulo": False},
     )
     figura.update_traces(
         textposition="outside",
@@ -2647,9 +2656,10 @@ def criar_grafico_top_unidades_dashboard(atendimentos, limite=12):
         showlegend=False,
         xaxis_title="Atendimentos",
         yaxis_title=None,
-        margin={"l": 15, "r": 45, "t": 15, "b": 45},
-        height=430,
+        margin={"l": 20, "r": 55, "t": 15, "b": 45},
+        height=520,
     )
+    figura.update_yaxes(automargin=True, tickfont={"size": 10})
     return figura
 
 
@@ -2807,8 +2817,17 @@ def construir_previa_dashboard_relatorio(
                                     ),
                                     dcc.Graph(
                                         figure=criar_grafico_regional_dashboard(unidades),
-                                        config={"displayModeBar": False},
+                                        config={
+                                            "displayModeBar": False,
+                                            "responsive": True,
+                                        },
                                         responsive=True,
+                                        className="grafico-relatorio-principal",
+                                        style={
+                                            "width": "100%",
+                                            "height": "clamp(420px, 50vh, 540px)",
+                                            "minHeight": "420px",
+                                        },
                                     ),
                                 ],
                                 className="p-3",
@@ -2830,8 +2849,15 @@ def construir_previa_dashboard_relatorio(
                                         config={
                                             "displayModeBar": False,
                                             "scrollZoom": True,
+                                            "responsive": True,
                                         },
                                         responsive=True,
+                                        className="grafico-relatorio-principal",
+                                        style={
+                                            "width": "100%",
+                                            "height": "clamp(420px, 50vh, 540px)",
+                                            "minHeight": "420px",
+                                        },
                                     ),
                                 ],
                                 className="p-2 p-md-3",
@@ -2852,8 +2878,17 @@ def construir_previa_dashboard_relatorio(
                                     html.H5("Status dos atendimentos", className="fw-bold"),
                                     dcc.Graph(
                                         figure=grafico_status(atendimentos),
-                                        config={"displayModeBar": False},
+                                        config={
+                                            "displayModeBar": False,
+                                            "responsive": True,
+                                        },
                                         responsive=True,
+                                        className="grafico-relatorio-secundario",
+                                        style={
+                                            "width": "100%",
+                                            "height": "clamp(300px, 36vh, 380px)",
+                                            "minHeight": "300px",
+                                        },
                                     ),
                                 ],
                                 className="p-3",
@@ -2869,8 +2904,17 @@ def construir_previa_dashboard_relatorio(
                                     html.H5("Evolução mensal", className="fw-bold"),
                                     dcc.Graph(
                                         figure=grafico_temporal(atendimentos, "mes"),
-                                        config={"displayModeBar": False},
+                                        config={
+                                            "displayModeBar": False,
+                                            "responsive": True,
+                                        },
                                         responsive=True,
+                                        className="grafico-relatorio-secundario",
+                                        style={
+                                            "width": "100%",
+                                            "height": "clamp(300px, 36vh, 380px)",
+                                            "minHeight": "300px",
+                                        },
                                     ),
                                 ],
                                 className="p-3",
@@ -2888,8 +2932,17 @@ def construir_previa_dashboard_relatorio(
                         html.H5("Unidades/OSCs com mais atendimentos", className="fw-bold"),
                         dcc.Graph(
                             figure=criar_grafico_top_unidades_dashboard(atendimentos),
-                            config={"displayModeBar": False},
+                            config={
+                                "displayModeBar": False,
+                                "responsive": True,
+                            },
                             responsive=True,
+                            className="grafico-relatorio-ranking",
+                            style={
+                                "width": "100%",
+                                "height": "clamp(500px, 62vh, 650px)",
+                                "minHeight": "500px",
+                            },
                         ),
                     ],
                     className="p-3",
