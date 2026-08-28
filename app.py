@@ -701,6 +701,51 @@ app.index_string = """
         {%favicon%}
         {%css%}
         <style>
+            .somente-impressao { display: none; }
+            body.modo-impressao .relatorio-impressao {
+                width: 283mm !important;
+                max-width: 283mm !important;
+            }
+            body.modo-impressao .linha-cards-relatorio,
+            body.modo-impressao .linha-regional-mapa,
+            body.modo-impressao .linha-status-temporal {
+                display: flex !important;
+                flex-wrap: nowrap !important;
+            }
+            body.modo-impressao .col-card-relatorio {
+                flex: 0 0 16.666666% !important;
+                width: 16.666666% !important;
+                max-width: 16.666666% !important;
+            }
+            body.modo-impressao .col-regional-relatorio {
+                flex: 0 0 40% !important;
+                width: 40% !important;
+                max-width: 40% !important;
+            }
+            body.modo-impressao .col-mapa-relatorio {
+                flex: 0 0 60% !important;
+                width: 60% !important;
+                max-width: 60% !important;
+            }
+            body.modo-impressao .col-status-relatorio,
+            body.modo-impressao .col-temporal-relatorio {
+                flex: 0 0 50% !important;
+                width: 50% !important;
+                max-width: 50% !important;
+            }
+            body.modo-impressao .grafico-relatorio-mapa,
+            body.modo-impressao .grafico-relatorio-regional {
+                height: 92mm !important;
+                min-height: 92mm !important;
+            }
+            body.modo-impressao .grafico-relatorio-secundario {
+                height: 105mm !important;
+                min-height: 105mm !important;
+            }
+            body.modo-impressao .grafico-relatorio-ranking {
+                height: 155mm !important;
+                min-height: 155mm !important;
+            }
             @media print {
                 @page { size: A4 landscape; margin: 7mm; }
                 html, body, #page-content {
@@ -791,20 +836,24 @@ app.index_string = """
                     break-before: page;
                     padding-top: 1mm;
                 }
-                .secao-detalhe-relatorio {
+                .secao-ranking-relatorio {
                     break-before: page;
                 }
-                .secao-ranking-relatorio,
                 .secao-detalhe-relatorio {
+                    break-before: page;
+                    break-inside: auto !important;
+                    overflow: visible !important;
+                }
+                .secao-ranking-relatorio {
                     break-inside: avoid;
                 }
-                .js-plotly-plot, .dash-table-container { break-inside: avoid; }
+                .js-plotly-plot { break-inside: avoid; }
                 .grafico-relatorio-mapa,
                 .grafico-relatorio-regional {
-                    height: 106mm !important;
-                    min-height: 106mm !important;
+                    height: 92mm !important;
+                    min-height: 92mm !important;
                     width: 100% !important;
-                    overflow: hidden !important;
+                    overflow: visible !important;
                 }
                 .grafico-relatorio-mapa .js-plotly-plot,
                 .grafico-relatorio-mapa .plot-container,
@@ -816,16 +865,16 @@ app.index_string = """
                     width: 100% !important;
                 }
                 .grafico-relatorio-secundario {
-                    height: 68mm !important;
-                    min-height: 68mm !important;
+                    height: 105mm !important;
+                    min-height: 105mm !important;
                     width: 100% !important;
-                    overflow: hidden !important;
+                    overflow: visible !important;
                 }
                 .grafico-relatorio-ranking {
-                    height: 100mm !important;
-                    min-height: 100mm !important;
+                    height: 155mm !important;
+                    min-height: 155mm !important;
                     width: 100% !important;
-                    overflow: hidden !important;
+                    overflow: visible !important;
                 }
                 .grafico-relatorio-secundario .js-plotly-plot,
                 .grafico-relatorio-secundario .plot-container,
@@ -838,6 +887,53 @@ app.index_string = """
                 }
                 .secao-detalhe-relatorio .dash-spreadsheet-container {
                     font-size: 6.5pt !important;
+                }
+                .tabela-previa-interativa {
+                    display: none !important;
+                }
+                .somente-impressao {
+                    display: table !important;
+                }
+                .tabela-impressao-unidades {
+                    width: 100% !important;
+                    border-collapse: collapse !important;
+                    table-layout: fixed !important;
+                    font-size: 6.2pt !important;
+                    line-height: 1.2 !important;
+                }
+                .tabela-impressao-unidades thead {
+                    display: table-header-group !important;
+                }
+                .tabela-impressao-unidades tr {
+                    break-inside: avoid !important;
+                }
+                .tabela-impressao-unidades th,
+                .tabela-impressao-unidades td {
+                    border: 0.25mm solid #d7e1ed !important;
+                    padding: 1.4mm !important;
+                    text-align: left !important;
+                    vertical-align: top !important;
+                    overflow-wrap: anywhere !important;
+                }
+                .tabela-impressao-unidades th {
+                    background: #071d41 !important;
+                    color: #ffffff !important;
+                    font-weight: 700 !important;
+                }
+                .tabela-impressao-unidades th:nth-child(1),
+                .tabela-impressao-unidades td:nth-child(1) { width: 10%; }
+                .tabela-impressao-unidades th:nth-child(2),
+                .tabela-impressao-unidades td:nth-child(2) { width: 5%; }
+                .tabela-impressao-unidades th:nth-child(3),
+                .tabela-impressao-unidades td:nth-child(3) { width: 13%; }
+                .tabela-impressao-unidades th:nth-child(4),
+                .tabela-impressao-unidades td:nth-child(4) { width: 36%; }
+                .tabela-impressao-unidades th:nth-child(5),
+                .tabela-impressao-unidades td:nth-child(5) { width: 24%; }
+                .tabela-impressao-unidades th:nth-child(6),
+                .tabela-impressao-unidades td:nth-child(6) {
+                    width: 12%;
+                    text-align: right !important;
                 }
                 .leitura-regional-relatorio {
                     font-size: 6.5pt !important;
@@ -2945,9 +3041,13 @@ def criar_mapa_dashboard_relatorio(unidades):
     pontos["Região"] = pontos["Região"].fillna("").astype(str).str.strip()
     pontos.loc[pontos["Região"] == "", "Região"] = "Não informado"
     centro, zoom = enquadramento_mapa(pontos)
-    # No relatório, o mapa ocupa um quadro mais largo. Um zoom mínimo evita
-    # excesso de oceano e mantém o Brasil bem enquadrado na impressão.
-    zoom = max(float(zoom), 3.15)
+    amplitude = max(
+        float(pontos["Latitude"].max() - pontos["Latitude"].min()),
+        float(pontos["Longitude"].max() - pontos["Longitude"].min()),
+    )
+    if amplitude > 20:
+        centro = {"lat": -14.235, "lon": -51.9253}
+        zoom = 3.0
     argumentos = {
         "data_frame": pontos,
         "lat": "Latitude",
@@ -2978,7 +3078,7 @@ def criar_mapa_dashboard_relatorio(unidades):
     figura.update_traces(marker={"size": 7, "opacity": 0.84})
     figura.update_layout(
         autosize=True,
-        height=540,
+        height=None,
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
         legend={
             "title": {"text": "Região"},
@@ -3010,13 +3110,19 @@ def criar_grafico_regional_dashboard(unidades):
         template="plotly_white",
         hover_data={"Pontos": True, "Atendimentos": True},
     )
-    figura.update_traces(textposition="outside", cliponaxis=False)
+    figura.update_traces(
+        textposition="inside",
+        insidetextanchor="end",
+        textfont={"color": "white"},
+        cliponaxis=False,
+    )
     figura.update_layout(
+        autosize=True,
         showlegend=False,
         xaxis_title="Unidades cadastradas",
         yaxis_title=None,
         margin={"l": 15, "r": 45, "t": 15, "b": 45},
-        height=360,
+        height=None,
     )
     return figura
 
@@ -3053,16 +3159,19 @@ def criar_grafico_top_unidades_dashboard(atendimentos, limite=12):
         hover_data={"Rótulo": False},
     )
     figura.update_traces(
-        textposition="outside",
+        textposition="inside",
+        insidetextanchor="end",
+        textfont={"color": "white"},
         marker_color="#1351B4",
         cliponaxis=False,
     )
     figura.update_layout(
+        autosize=True,
         showlegend=False,
         xaxis_title="Atendimentos",
         yaxis_title=None,
-        margin={"l": 20, "r": 55, "t": 15, "b": 45},
-        height=520,
+        margin={"l": 20, "r": 20, "t": 15, "b": 45},
+        height=None,
     )
     figura.update_yaxes(automargin=True, tickfont={"size": 10})
     return figura
@@ -3138,9 +3247,81 @@ def construir_previa_dashboard_relatorio(
         "Atendimentos CAIS",
     ]
     dados_tabela = (
-        tabela_unidades[colunas_tabela].head(25).to_dict("records")
+        tabela_unidades[colunas_tabela].to_dict("records")
         if not tabela_unidades.empty
         else []
+    )
+
+    figura_status_relatorio = grafico_status(atendimentos)
+    figura_status_relatorio.update_layout(
+        autosize=True,
+        height=None,
+        margin={"l": 45, "r": 20, "t": 20, "b": 45},
+    )
+    figura_status_relatorio.update_yaxes(
+        rangemode="tozero",
+        automargin=True,
+    )
+
+    figura_temporal_relatorio = grafico_temporal(
+        atendimentos,
+        agrupamento,
+    )
+    figura_temporal_relatorio.update_layout(
+        autosize=True,
+        height=None,
+        margin={"l": 45, "r": 20, "t": 20, "b": 60},
+    )
+    figura_temporal_relatorio.update_xaxes(
+        tickmode="auto",
+        nticks=10,
+        tickangle=-30,
+        automargin=True,
+    )
+    figura_temporal_relatorio.update_yaxes(
+        rangemode="tozero",
+        automargin=True,
+    )
+
+    cabecalhos_impressao = [
+        "Região",
+        "UF",
+        "Município",
+        "Unidade / OSC",
+        "Fase",
+        "Atendimentos únicos",
+    ]
+    linhas_impressao = []
+    for registro in dados_tabela:
+        linhas_impressao.append(
+            html.Tr(
+                [
+                    html.Td(
+                        "" if pd.isna(registro.get(coluna))
+                        else str(registro.get(coluna, ""))
+                    )
+                    for coluna in colunas_tabela
+                ]
+            )
+        )
+    if not linhas_impressao:
+        linhas_impressao.append(
+            html.Tr(
+                [html.Td("Sem dados no recorte", colSpan=6)]
+            )
+        )
+    tabela_impressao = html.Table(
+        [
+            html.Thead(
+                html.Tr(
+                    [html.Th(rotulo) for rotulo in cabecalhos_impressao]
+                )
+            ),
+            html.Tbody(linhas_impressao),
+        ],
+        className=(
+            "somente-impressao tabela-impressao-unidades"
+        ),
     )
 
     return html.Div(
@@ -3313,7 +3494,7 @@ def construir_previa_dashboard_relatorio(
                                 [
                                     html.H5("Status dos atendimentos", className="fw-bold"),
                                     dcc.Graph(
-                                        figure=grafico_status(atendimentos),
+                                        figure=figura_status_relatorio,
                                         config={
                                             "displayModeBar": False,
                                             "responsive": True,
@@ -3348,10 +3529,7 @@ def construir_previa_dashboard_relatorio(
                                         className="fw-bold",
                                     ),
                                     dcc.Graph(
-                                        figure=grafico_temporal(
-                                            atendimentos,
-                                            agrupamento,
-                                        ),
+                                        figure=figura_temporal_relatorio,
                                         config={
                                             "displayModeBar": False,
                                             "responsive": True,
@@ -3407,40 +3585,47 @@ def construir_previa_dashboard_relatorio(
                         html.H5("Detalhamento das unidades", className="fw-bold mb-1"),
                         html.P(
                             (
-                                "A prévia mostra até 25 registros. O PDF baixado "
-                                "inclui todas as unidades do recorte."
+                                "A tela mantém a tabela interativa. Na impressão, "
+                                "todas as unidades do recorte são incluídas."
                             ),
                             className="text-muted mb-3",
                         ),
-                        dash_table.DataTable(
-                            columns=[
-                                {"name": nome, "id": identificador}
-                                for nome, identificador in [
-                                    ("Região", "Região"),
-                                    ("UF", "UF"),
-                                    ("Município", "Município"),
-                                    ("Unidade / OSC", "Nome para exibição"),
-                                    ("Fase", "Fase"),
-                                    ("Atendimentos únicos", "Atendimentos CAIS"),
-                                ]
-                            ],
-                            data=dados_tabela,
-                            page_size=25,
-                            sort_action="native",
-                            style_table={"overflowX": "auto"},
-                            style_cell={
-                                "textAlign": "left",
-                                "padding": "9px",
-                                "fontSize": "12px",
-                                "whiteSpace": "normal",
-                                "height": "auto",
-                            },
-                            style_header={
-                                "backgroundColor": "#D6E7FF",
-                                "color": "#071D41",
-                                "fontWeight": "bold",
-                            },
+                        html.Div(
+                            dash_table.DataTable(
+                                columns=[
+                                    {"name": nome, "id": identificador}
+                                    for nome, identificador in [
+                                        ("Região", "Região"),
+                                        ("UF", "UF"),
+                                        ("Município", "Município"),
+                                        ("Unidade / OSC", "Nome para exibição"),
+                                        ("Fase", "Fase"),
+                                        (
+                                            "Atendimentos únicos",
+                                            "Atendimentos CAIS",
+                                        ),
+                                    ]
+                                ],
+                                data=dados_tabela,
+                                page_size=25,
+                                sort_action="native",
+                                style_table={"overflowX": "auto"},
+                                style_cell={
+                                    "textAlign": "left",
+                                    "padding": "9px",
+                                    "fontSize": "12px",
+                                    "whiteSpace": "normal",
+                                    "height": "auto",
+                                },
+                                style_header={
+                                    "backgroundColor": "#D6E7FF",
+                                    "color": "#071D41",
+                                    "fontWeight": "bold",
+                                },
+                            ),
+                            className="tabela-previa-interativa",
                         ),
+                        tabela_impressao,
                     ],
                     className="p-3 p-md-4",
                 ),
@@ -13409,13 +13594,22 @@ app.clientside_callback(
                 });
             }
         };
-        redimensionarGraficos();
+        const finalizarImpressao = function() {
+            document.body.classList.remove('modo-impressao');
+            window.setTimeout(redimensionarGraficos, 100);
+        };
+        document.body.classList.add('modo-impressao');
+        window.addEventListener(
+            'afterprint',
+            finalizarImpressao,
+            {once: true}
+        );
         window.setTimeout(function() {
             redimensionarGraficos();
             window.setTimeout(function() {
                 window.print();
-            }, 250);
-        }, 450);
+            }, 400);
+        }, 600);
         return "";
     }
     """,
