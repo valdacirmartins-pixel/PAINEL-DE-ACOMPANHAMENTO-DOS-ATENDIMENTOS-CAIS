@@ -1,4 +1,5 @@
 import base64
+import gzip
 import io
 import os
 import re
@@ -44,6 +45,121 @@ PASTA_OUTPUTS = os.path.join(PASTA_BASE, "outputs")
 PASTA_HISTORICO = os.path.join(PASTA_DATA, "historico_importacoes")
 CAMINHO_BANCO = os.path.join(PASTA_DATA, "monitoramento_cidadania.sqlite3")
 CAMINHO_BASE_UNIDADES_MAPA = os.path.join(PASTA_DATA, "unidades_cais_mapa.json")
+CAMINHO_BASE_TRANSFERENCIAS = os.path.join(
+    PASTA_DATA,
+    "transferencias_voluntarias.json",
+)
+
+# Cópia inicial da planilha de transferências incorporada ao app.
+# O upload na nova aba substitui esta base e mantém os dados atualizados.
+TRANSFERENCIAS_PADRAO_CSV_GZIP_B64 = (
+    "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"
+    "+DA5dQAA"
+)
 
 # Cadastro geográfico inicial incorporado ao código. A aba "Mapa das Unidades"
 # permite substituir esta base por outra planilha XLSX ou CSV.
@@ -2000,6 +2116,7 @@ def ler_arquivo_upload(
         for encoding in [
             "utf-8-sig",
             "utf-8",
+            "cp1252",
             "latin1",
         ]:
             for separador in [
@@ -2522,6 +2639,285 @@ def ler_base_unidades_upload(nome_arquivo, conteudo_upload):
         )
     candidatas.sort(key=lambda item: (item[0], item[1]), reverse=True)
     return candidatas[0][2]
+
+
+# ============================================================
+# FUNÇÕES - TRANSFERÊNCIAS VOLUNTÁRIAS
+# ============================================================
+
+COLUNAS_TRANSFERENCIAS = [
+    "Número",
+    "Convenente / OSC",
+    "Objeto",
+    "Número do Instrumento",
+    "Número do Processo",
+    "Região",
+    "UF",
+    "Tipo",
+    "Subtipo",
+    "Tema",
+    "Valor Global",
+    "Valor Desembolsado",
+    "Valor a Desembolsar",
+    "Percentual Desembolsado",
+    "Equipamentos Cidadania PopRua",
+    "Status",
+    "Responsável",
+    "Ponto Focal",
+    "Início",
+    "Término",
+    "Ajuste Até",
+    "Contas Até",
+    "Atualização",
+    "Observação",
+]
+
+
+def localizar_coluna_transferencias(df, *nomes):
+    mapa = {
+        normalizar_nome_mapa(coluna): coluna
+        for coluna in df.columns
+    }
+    for nome in nomes:
+        encontrada = mapa.get(normalizar_nome_mapa(nome))
+        if encontrada is not None:
+            return encontrada
+    return None
+
+
+def numero_monetario_transferencias(valor):
+    if valor is None or pd.isna(valor):
+        return 0.0
+    if isinstance(valor, (int, float)):
+        return round(float(valor), 2)
+
+    texto = str(valor).replace("\xa0", " ").strip().lower()
+    texto = texto.replace("r$", "").replace(" ", "")
+    texto = re.sub(r"[^0-9,.-]", "", texto)
+    if not texto or texto in {"-", ".", ","}:
+        return 0.0
+
+    if "," in texto:
+        texto = texto.replace(".", "").replace(",", ".")
+    elif texto.count(".") > 1:
+        texto = texto.replace(".", "")
+
+    try:
+        return round(float(texto), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def formatar_data_transferencias(valor):
+    if valor is None or pd.isna(valor) or str(valor).strip() == "":
+        return ""
+    data = pd.to_datetime(valor, dayfirst=True, errors="coerce")
+    if pd.isna(data):
+        return str(valor).strip()
+    return data.strftime("%d/%m/%Y")
+
+
+def padronizar_base_transferencias(df):
+    if df is None or df.empty:
+        return pd.DataFrame(columns=COLUNAS_TRANSFERENCIAS)
+
+    base = df.copy()
+    base.columns = [str(coluna).strip() for coluna in base.columns]
+
+    aliases = {
+        "Número": ("Nº", "Número", "Numero", "N°"),
+        "Convenente / OSC": (
+            "CONVENENTE", "Convenente", "Convenente / OSC",
+            "Nome da OSC", "OSC",
+        ),
+        "Objeto": ("OBJETO", "Objeto"),
+        "Número do Instrumento": (
+            "Nº INSTRUM.", "Nº INSTRUM", "Número do Instrumento",
+            "Numero do Instrumento", "Instrumento",
+        ),
+        "Número do Processo": (
+            "Nº PROCESSO", "Número do Processo", "Numero do Processo",
+            "Processo",
+        ),
+        "Região": ("REGIÃO", "Região", "Regiao"),
+        "UF": ("UF", "Estado"),
+        "Tipo": ("TIPO", "Tipo"),
+        "Subtipo": ("SUBTIPO", "Subtipo"),
+        "Tema": ("TEMA", "Tema"),
+        "Valor Global": ("VALOR GLOBAL", "Valor Global"),
+        "Valor Desembolsado": (
+            "VALOR DESEMBOLSADO", "Valor Desembolsado",
+        ),
+        "Valor a Desembolsar": (
+            "VALOR A DESEMBOLSAR", "Valor a Desembolsar",
+        ),
+        "Equipamentos Cidadania PopRua": (
+            "EQUIPAMENTOS (CIDADANIA POPRUA)",
+            "Equipamentos Cidadania PopRua",
+            "Equipamentos",
+        ),
+        "Status": ("STATUS", "Status", "Situação", "Situacao"),
+        "Responsável": ("RESPONSÁVEL", "Responsável", "Responsavel"),
+        "Ponto Focal": (
+            "PONTO FOCAL (Responsável técnico)", "Ponto Focal",
+            "Responsável técnico", "Responsavel tecnico",
+        ),
+        "Início": ("INÍCIO", "Início", "Inicio"),
+        "Término": ("TÉRMINO", "Término", "Termino"),
+        "Ajuste Até": ("AJUSTE ATÉ", "Ajuste Até", "Ajuste Ate"),
+        "Contas Até": ("CONTAS ATÉ", "Contas Até", "Contas Ate"),
+        "Atualização": ("ATUALIZAÇÃO", "Atualização", "Atualizacao"),
+        "Observação": ("OBSERVAÇÃO", "Observação", "Observacao"),
+    }
+
+    colunas_origem = {
+        destino: localizar_coluna_transferencias(base, *nomes)
+        for destino, nomes in aliases.items()
+    }
+    if colunas_origem["Convenente / OSC"] is None:
+        raise ValueError(
+            "A planilha precisa possuir a coluna CONVENENTE ou Nome da OSC."
+        )
+    if (
+        colunas_origem["Valor Global"] is None
+        or colunas_origem["Valor Desembolsado"] is None
+    ):
+        raise ValueError(
+            "A planilha precisa possuir VALOR GLOBAL e VALOR DESEMBOLSADO."
+        )
+
+    resultado = pd.DataFrame(index=base.index)
+    for destino in COLUNAS_TRANSFERENCIAS:
+        if destino in {
+            "Valor Global",
+            "Valor Desembolsado",
+            "Valor a Desembolsar",
+            "Percentual Desembolsado",
+        }:
+            continue
+        origem = colunas_origem.get(destino)
+        if origem is None:
+            resultado[destino] = ""
+        else:
+            resultado[destino] = (
+                base[origem].fillna("").astype(str).str.strip()
+            )
+
+    # Linhas vazias e a linha de totais da planilha não são instrumentos.
+    resultado = resultado[
+        resultado["Convenente / OSC"].str.strip() != ""
+    ].copy()
+
+    global_origem = colunas_origem["Valor Global"]
+    desembolsado_origem = colunas_origem["Valor Desembolsado"]
+    resultado["Valor Global"] = base.loc[
+        resultado.index, global_origem
+    ].map(numero_monetario_transferencias)
+    resultado["Valor Desembolsado"] = base.loc[
+        resultado.index, desembolsado_origem
+    ].map(numero_monetario_transferencias)
+    resultado["Valor a Desembolsar"] = (
+        resultado["Valor Global"] - resultado["Valor Desembolsado"]
+    ).round(2)
+    denominador_global = pd.to_numeric(
+        resultado["Valor Global"], errors="coerce"
+    )
+    percentual_desembolsado = resultado["Valor Desembolsado"].div(
+        denominador_global.where(denominador_global != 0)
+    )
+    resultado["Percentual Desembolsado"] = pd.to_numeric(
+        percentual_desembolsado, errors="coerce"
+    ).fillna(0.0).clip(lower=0)
+
+    mapa_regioes = {
+        "norte": "Norte",
+        "nordeste": "Nordeste",
+        "centro oeste": "Centro-Oeste",
+        "sudeste": "Sudeste",
+        "sul": "Sul",
+        "nacional": "Nacional",
+    }
+    resultado["Região"] = resultado["Região"].map(
+        lambda valor: mapa_regioes.get(
+            normalizar_nome_mapa(valor),
+            str(valor).strip(),
+        )
+    )
+    resultado["UF"] = resultado["UF"].str.upper().str.strip()
+    for coluna in ["Tipo", "Subtipo", "Tema", "Status", "Responsável"]:
+        resultado[coluna] = resultado[coluna].str.strip()
+    for coluna in ["Início", "Término", "Ajuste Até", "Contas Até", "Atualização"]:
+        resultado[coluna] = resultado[coluna].map(formatar_data_transferencias)
+
+    return resultado[COLUNAS_TRANSFERENCIAS].reset_index(drop=True)
+
+
+def carregar_base_transferencias_padrao():
+    dados = gzip.decompress(
+        base64.b64decode(TRANSFERENCIAS_PADRAO_CSV_GZIP_B64)
+    ).decode("cp1252")
+    base = pd.read_csv(io.StringIO(dados), sep=";", dtype=str)
+    return padronizar_base_transferencias(base)
+
+
+def carregar_base_transferencias():
+    if os.path.exists(CAMINHO_BASE_TRANSFERENCIAS):
+        try:
+            base = pd.read_json(
+                CAMINHO_BASE_TRANSFERENCIAS,
+                orient="split",
+            )
+            return padronizar_base_transferencias(base)
+        except Exception:
+            pass
+    return carregar_base_transferencias_padrao()
+
+
+def salvar_base_transferencias(df):
+    df.to_json(
+        CAMINHO_BASE_TRANSFERENCIAS,
+        orient="split",
+        force_ascii=False,
+        indent=2,
+    )
+
+
+def ler_base_transferencias_upload(nome_arquivo, conteudo_upload):
+    extensao = str(nome_arquivo or "").lower().rsplit(".", 1)[-1]
+    if extensao == "csv":
+        return padronizar_base_transferencias(
+            ler_arquivo_upload(nome_arquivo, conteudo_upload)
+        )
+    if extensao != "xlsx":
+        raise ValueError("Use uma planilha CSV ou XLSX.")
+
+    abas = pd.read_excel(
+        io.BytesIO(bytes_upload(conteudo_upload)),
+        sheet_name=None,
+    )
+    candidatas = []
+    for nome_aba, dados_aba in abas.items():
+        try:
+            preparada = padronizar_base_transferencias(dados_aba)
+        except Exception:
+            continue
+        candidatas.append((len(preparada), str(nome_aba), preparada))
+    if not candidatas:
+        raise ValueError(
+            "Nenhuma aba possui CONVENENTE, VALOR GLOBAL e VALOR DESEMBOLSADO."
+        )
+    candidatas.sort(key=lambda item: item[0], reverse=True)
+    return candidatas[0][2]
+
+
+def formatar_moeda_brl(valor):
+    texto = f"{float(valor or 0):,.2f}"
+    texto = texto.replace(",", "X").replace(".", ",").replace("X", ".")
+    return f"R$ {texto}"
+
+
+def formatar_percentual_brl(valor):
+    return f"{float(valor or 0) * 100:.1f}%".replace(".", ",")
 
 
 def nome_exibicao_mapa(linha):
@@ -5944,6 +6340,7 @@ navbar = dbc.Navbar(
                     dbc.NavItem(dbc.NavLink("Atendimentos", href="/atendimentos", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
                     dbc.NavItem(dbc.NavLink("Usuários", href="/usuarios", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
                     dbc.NavItem(dbc.NavLink("Auditoria", href="/auditoria", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
+                    dbc.NavItem(dbc.NavLink("Transferências", href="/transferencias", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
                     dbc.NavItem(dbc.NavLink("Base de Dados", href="/base", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
                     dbc.NavItem(dbc.NavLink("Relatório PDF", href="/relatorios", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
                     dbc.NavItem(
@@ -5955,7 +6352,7 @@ navbar = dbc.Navbar(
                         )
                     ),
                 ],
-                className="ms-auto",
+                className="ms-auto flex-wrap justify-content-end",
                 navbar=True,
             ),
         ],
@@ -9558,6 +9955,497 @@ mapa_unidades_layout = dbc.Container(
 )
 
 
+# ============================================================
+# LAYOUT - TRANSFERÊNCIAS VOLUNTÁRIAS
+# ============================================================
+
+transferencias_layout = dbc.Container(
+    [
+        dcc.Download(id="download-transferencias"),
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        html.H1(
+                            "Transferências Voluntárias",
+                            className="fw-bold mb-2",
+                            style={"color": "#071D41"},
+                        ),
+                        html.P(
+                            (
+                                "Acompanhamento dos instrumentos, convenentes/OSCs "
+                                "e valores desembolsados pela DDPR."
+                            ),
+                            className="text-muted mb-0",
+                        ),
+                    ],
+                    xs=12,
+                )
+            ],
+            className="mb-4",
+        ),
+
+        dbc.Card(
+            dbc.CardBody(
+                [
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    html.H5(
+                                        "Atualizar base financeira",
+                                        className="fw-bold mb-1",
+                                    ),
+                                    html.P(
+                                        (
+                                            "Envie a versão mais recente em CSV ou XLSX. "
+                                            "A estrutura, as colunas e os totais serão "
+                                            "recalculados automaticamente."
+                                        ),
+                                        className="text-muted mb-3",
+                                    ),
+                                    dcc.Upload(
+                                        id="upload-transferencias",
+                                        children=html.Div(
+                                            [
+                                                html.I(
+                                                    className=(
+                                                        "fa-solid fa-cloud-arrow-up "
+                                                        "fa-2x mb-2"
+                                                    ),
+                                                    style={"color": "#1351B4"},
+                                                ),
+                                                html.Div(
+                                                    [
+                                                        html.Strong(
+                                                            "Arraste a planilha ou clique para selecionar"
+                                                        ),
+                                                        html.Br(),
+                                                        html.Small(
+                                                            "Formatos aceitos: CSV e XLSX"
+                                                        ),
+                                                    ]
+                                                ),
+                                            ],
+                                            className="text-center",
+                                        ),
+                                        accept=".csv,.xlsx",
+                                        multiple=False,
+                                        style={
+                                            "border": "2px dashed #7AA7E0",
+                                            "borderRadius": "14px",
+                                            "padding": "24px 16px",
+                                            "backgroundColor": "#F6F9FE",
+                                            "cursor": "pointer",
+                                        },
+                                    ),
+                                ],
+                                xs=12,
+                                lg=8,
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Button(
+                                        [
+                                            html.I(
+                                                className="fa-solid fa-download me-2"
+                                            ),
+                                            "Baixar base atual",
+                                        ],
+                                        id="botao-baixar-transferencias",
+                                        color="primary",
+                                        className="w-100 mb-2",
+                                    ),
+                                    dbc.Button(
+                                        [
+                                            html.I(
+                                                className="fa-solid fa-rotate-left me-2"
+                                            ),
+                                            "Restaurar base inicial",
+                                        ],
+                                        id="botao-restaurar-transferencias",
+                                        color="secondary",
+                                        outline=True,
+                                        className="w-100 mb-3",
+                                    ),
+                                    html.Small(
+                                        (
+                                            "A atualização automática pelo SharePoint "
+                                            "será ativada quando o acesso Microsoft 365 "
+                                            "for configurado no Railway."
+                                        ),
+                                        className="text-muted",
+                                    ),
+                                ],
+                                xs=12,
+                                lg=4,
+                                className="mt-3 mt-lg-0 d-flex flex-column justify-content-center",
+                            ),
+                        ],
+                        className="g-3",
+                    ),
+                    html.Div(
+                        id="mensagem-upload-transferencias",
+                        className="mt-3",
+                    ),
+                ],
+                className="p-4",
+            ),
+            className="shadow-sm border-0 rounded-4 mb-4",
+        ),
+
+        dbc.Card(
+            dbc.CardBody(
+                [
+                    html.H5("Filtros financeiros", className="fw-bold mb-3"),
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    dbc.Label("Região", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="filtro-regiao-transferencias",
+                                        placeholder="Todas as regiões",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12, md=6, xl=2,
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label("UF", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="filtro-uf-transferencias",
+                                        placeholder="Todas as UFs",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12, md=6, xl=2,
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label("Status", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="filtro-status-transferencias",
+                                        placeholder="Todos os status",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12, md=6, xl=2,
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label("Tema", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="filtro-tema-transferencias",
+                                        placeholder="Todos os temas",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12, md=6, xl=2,
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label("Responsável", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="filtro-responsavel-transferencias",
+                                        placeholder="Todos os responsáveis",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12, md=6, xl=2,
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label("Convenente / OSC", className="fw-semibold"),
+                                    dcc.Dropdown(
+                                        id="filtro-convenente-transferencias",
+                                        placeholder="Todos os convenentes",
+                                        clearable=True,
+                                    ),
+                                ],
+                                xs=12, md=6, xl=2,
+                            ),
+                        ],
+                        className="g-3",
+                    ),
+                    dbc.Button(
+                        [
+                            html.I(
+                                className="fa-solid fa-filter-circle-xmark me-2"
+                            ),
+                            "Limpar filtros",
+                        ],
+                        id="botao-limpar-filtros-transferencias",
+                        color="secondary",
+                        outline=True,
+                        className="mt-3",
+                    ),
+                ],
+                className="p-4",
+            ),
+            className="shadow-sm border-0 rounded-4 mb-4",
+        ),
+
+        dbc.Row(
+            [
+                dbc.Col(
+                    criar_card(
+                        "Valor global", "R$ 0,00",
+                        "fa-solid fa-sack-dollar",
+                        "card-valor-global-transferencias",
+                    ),
+                    xs=12, sm=6, xl=2, className="mb-3",
+                ),
+                dbc.Col(
+                    criar_card(
+                        "Valor desembolsado", "R$ 0,00",
+                        "fa-solid fa-money-bill-transfer",
+                        "card-valor-desembolsado-transferencias",
+                    ),
+                    xs=12, sm=6, xl=2, className="mb-3",
+                ),
+                dbc.Col(
+                    criar_card(
+                        "A desembolsar", "R$ 0,00",
+                        "fa-solid fa-hourglass-half",
+                        "card-valor-restante-transferencias",
+                    ),
+                    xs=12, sm=6, xl=2, className="mb-3",
+                ),
+                dbc.Col(
+                    criar_card(
+                        "Percentual desembolsado", "0,0%",
+                        "fa-solid fa-chart-pie",
+                        "card-percentual-transferencias",
+                    ),
+                    xs=12, sm=6, xl=2, className="mb-3",
+                ),
+                dbc.Col(
+                    criar_card(
+                        "Instrumentos", "0",
+                        "fa-solid fa-file-signature",
+                        "card-instrumentos-transferencias",
+                    ),
+                    xs=12, sm=6, xl=2, className="mb-3",
+                ),
+                dbc.Col(
+                    criar_card(
+                        "Convenentes / OSCs", "0",
+                        "fa-solid fa-building-columns",
+                        "card-convenentes-transferencias",
+                    ),
+                    xs=12, sm=6, xl=2, className="mb-3",
+                ),
+            ],
+            className="g-3 mb-1",
+        ),
+
+        html.Div(id="resumo-transferencias", className="mb-4"),
+
+        dbc.Row(
+            [
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.H5(
+                                    "Execução financeira por região",
+                                    className="fw-bold mb-1",
+                                ),
+                                html.P(
+                                    "Comparação entre valor global, desembolsado e restante.",
+                                    className="text-muted mb-3",
+                                ),
+                                dcc.Loading(
+                                    dcc.Graph(
+                                        id="grafico-regiao-transferencias",
+                                        responsive=True,
+                                        config={
+                                            "responsive": True,
+                                            "displaylogo": False,
+                                            "displayModeBar": False,
+                                        },
+                                        style={"height": "430px"},
+                                    )
+                                ),
+                            ],
+                            className="p-4",
+                        ),
+                        className="shadow-sm border-0 rounded-4 h-100",
+                    ),
+                    xs=12,
+                    lg=8,
+                    className="mb-4",
+                ),
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            [
+                                html.H5(
+                                    "Instrumentos por status",
+                                    className="fw-bold mb-1",
+                                ),
+                                html.P(
+                                    "Distribuição do recorte selecionado.",
+                                    className="text-muted mb-3",
+                                ),
+                                dcc.Loading(
+                                    dcc.Graph(
+                                        id="grafico-status-transferencias",
+                                        responsive=True,
+                                        config={
+                                            "responsive": True,
+                                            "displaylogo": False,
+                                            "displayModeBar": False,
+                                        },
+                                        style={"height": "430px"},
+                                    )
+                                ),
+                            ],
+                            className="p-4",
+                        ),
+                        className="shadow-sm border-0 rounded-4 h-100",
+                    ),
+                    xs=12,
+                    lg=4,
+                    className="mb-4",
+                ),
+            ],
+            className="g-3",
+        ),
+
+        dbc.Card(
+            dbc.CardBody(
+                [
+                    html.H5(
+                        "Convenentes/OSCs por valor global",
+                        className="fw-bold mb-1",
+                    ),
+                    html.P(
+                        "Os 15 maiores valores do recorte selecionado.",
+                        className="text-muted mb-3",
+                    ),
+                    dcc.Loading(
+                        dcc.Graph(
+                            id="grafico-convenentes-transferencias",
+                            responsive=True,
+                            config={
+                                "responsive": True,
+                                "displaylogo": False,
+                                "displayModeBar": False,
+                            },
+                            style={"minHeight": "520px"},
+                        )
+                    ),
+                ],
+                className="p-4",
+            ),
+            className="shadow-sm border-0 rounded-4 mb-4",
+        ),
+
+        dbc.Card(
+            dbc.CardBody(
+                [
+                    html.H5(
+                        "Detalhamento das transferências",
+                        className="fw-bold mb-1",
+                    ),
+                    html.P(
+                        (
+                            "A tabela pode ser filtrada, ordenada e exportada. "
+                            "Os valores exibidos são recalculados pelos instrumentos."
+                        ),
+                        className="text-muted mb-3",
+                    ),
+                    dash_table.DataTable(
+                        id="tabela-transferencias",
+                        columns=[
+                            {"name": coluna, "id": coluna}
+                            for coluna in [
+                                "Convenente / OSC",
+                                "Número do Instrumento",
+                                "Número do Processo",
+                                "Região",
+                                "UF",
+                                "Tipo",
+                                "Subtipo",
+                                "Tema",
+                                "Status",
+                                "Valor Global",
+                                "Valor Desembolsado",
+                                "Valor a Desembolsar",
+                                "Percentual Desembolsado",
+                                "Responsável",
+                                "Início",
+                                "Término",
+                                "Atualização",
+                                "Objeto",
+                                "Observação",
+                            ]
+                        ],
+                        data=[],
+                        page_size=15,
+                        page_action="native",
+                        sort_action="native",
+                        filter_action="native",
+                        export_format="csv",
+                        export_headers="display",
+                        style_table={
+                            "overflowX": "auto",
+                            "WebkitOverflowScrolling": "touch",
+                        },
+                        style_cell={
+                            "textAlign": "left",
+                            "padding": "10px",
+                            "fontFamily": "Arial",
+                            "fontSize": "13px",
+                            "minWidth": "115px",
+                            "maxWidth": "360px",
+                            "whiteSpace": "normal",
+                        },
+                        style_cell_conditional=[
+                            {
+                                "if": {"column_id": "Convenente / OSC"},
+                                "minWidth": "260px",
+                                "width": "300px",
+                            },
+                            {
+                                "if": {"column_id": "Objeto"},
+                                "minWidth": "360px",
+                                "width": "460px",
+                            },
+                            {
+                                "if": {"column_id": "Observação"},
+                                "minWidth": "300px",
+                                "width": "400px",
+                            },
+                        ],
+                        style_header={
+                            "fontWeight": "bold",
+                            "backgroundColor": "#D6E7FF",
+                            "color": "#071D41",
+                        },
+                        style_data_conditional=[
+                            {
+                                "if": {
+                                    "filter_query": "{Valor a Desembolsar} = 'R$ 0,00'"
+                                },
+                                "backgroundColor": "#E9F7EF",
+                            }
+                        ],
+                    ),
+                ],
+                className="p-4",
+            ),
+            className="shadow-sm border-0 rounded-4 mb-4",
+        ),
+    ],
+    fluid=True,
+    className="px-2 px-md-4 pb-5",
+)
+
+
 relatorios_layout = dbc.Container(
     [
         dbc.Row(
@@ -9770,6 +10658,15 @@ app.layout = html.Div(
         ),
 
         dcc.Store(
+            id="dados-transferencias",
+            storage_type="memory",
+            data=carregar_base_transferencias().to_json(
+                orient="split",
+                force_ascii=False,
+            ),
+        ),
+
+        dcc.Store(
             id="auth-refresh",
             storage_type="memory",
             data=0,
@@ -9826,6 +10723,8 @@ def navegar_paginas(pathname, auth_refresh):
         pagina = usuarios_layout
     elif pathname == "/auditoria":
         pagina = auditoria_layout
+    elif pathname == "/transferencias":
+        pagina = transferencias_layout
     elif pathname == "/base":
         pagina = base_layout
     elif pathname == "/relatorios":
@@ -13614,6 +14513,441 @@ def baixar_dashboard_pdf(
                 className="rounded-4 mb-0",
             ),
         )
+
+
+# ============================================================
+# CALLBACKS - TRANSFERÊNCIAS VOLUNTÁRIAS
+# ============================================================
+
+def criar_grafico_regiao_transferencias(base):
+    if base.empty:
+        return figura_vazia("Nenhuma transferência corresponde aos filtros.")
+
+    dados = base.copy()
+    dados["Região"] = dados["Região"].replace("", "Não informado")
+    resumo = (
+        dados.groupby("Região", as_index=False)[
+            ["Valor Global", "Valor Desembolsado", "Valor a Desembolsar"]
+        ]
+        .sum()
+    )
+    longo = resumo.melt(
+        id_vars="Região",
+        var_name="Indicador",
+        value_name="Valor",
+    )
+    longo["Valor em milhões"] = longo["Valor"] / 1_000_000
+    figura = px.bar(
+        longo,
+        x="Região",
+        y="Valor em milhões",
+        color="Indicador",
+        barmode="group",
+        template="plotly_white",
+        color_discrete_map={
+            "Valor Global": "#1351B4",
+            "Valor Desembolsado": "#168821",
+            "Valor a Desembolsar": "#E6A700",
+        },
+        category_orders={"Região": ORDEM_REGIOES_MAPA + ["Nacional"]},
+    )
+    figura.update_traces(
+        hovertemplate=(
+            "<b>%{x}</b><br>%{fullData.name}: "
+            "R$ %{y:.2f} milhões<extra></extra>"
+        )
+    )
+    figura.update_layout(
+        autosize=True,
+        xaxis_title=None,
+        yaxis_title="R$ milhões",
+        legend_title_text="",
+        legend={"orientation": "h", "y": 1.12, "x": 0},
+        margin={"l": 25, "r": 20, "t": 50, "b": 35},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    return figura
+
+
+def criar_grafico_status_transferencias(base):
+    if base.empty:
+        return figura_vazia("Nenhuma transferência corresponde aos filtros.")
+    status = base["Status"].replace("", "Não informado").value_counts()
+    figura = px.pie(
+        names=status.index,
+        values=status.values,
+        hole=0.58,
+        template="plotly_white",
+        color_discrete_sequence=[
+            "#168821", "#1351B4", "#E6A700", "#8E44AD", "#6C757D",
+        ],
+    )
+    figura.update_traces(
+        textposition="inside",
+        textinfo="percent+label",
+        hovertemplate="<b>%{label}</b><br>%{value} instrumento(s)<extra></extra>",
+    )
+    figura.update_layout(
+        autosize=True,
+        showlegend=False,
+        margin={"l": 15, "r": 15, "t": 15, "b": 15},
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+    return figura
+
+
+def criar_grafico_convenentes_transferencias(base, limite=15):
+    if base.empty:
+        return figura_vazia("Nenhuma transferência corresponde aos filtros.")
+    resumo = (
+        base.groupby("Convenente / OSC", as_index=False)[
+            ["Valor Global", "Valor Desembolsado", "Valor a Desembolsar"]
+        ]
+        .sum()
+        .nlargest(limite, "Valor Global")
+        .sort_values("Valor Global", ascending=True)
+    )
+    resumo["Valor global em milhões"] = resumo["Valor Global"] / 1_000_000
+    resumo["Texto"] = resumo["Valor Global"].map(formatar_moeda_brl)
+    figura = px.bar(
+        resumo,
+        x="Valor global em milhões",
+        y="Convenente / OSC",
+        orientation="h",
+        text="Texto",
+        template="plotly_white",
+        color_discrete_sequence=["#1351B4"],
+        hover_data={
+            "Valor Global": False,
+            "Valor Desembolsado": ":,.2f",
+            "Valor a Desembolsar": ":,.2f",
+            "Valor global em milhões": False,
+            "Texto": False,
+        },
+    )
+    figura.update_traces(
+        textposition="outside",
+        cliponaxis=False,
+        hovertemplate=(
+            "<b>%{y}</b><br>Valor global: R$ %{x:.2f} milhões"
+            "<extra></extra>"
+        ),
+    )
+    figura.update_layout(
+        autosize=True,
+        xaxis_title="Valor global (R$ milhões)",
+        yaxis_title=None,
+        margin={"l": 25, "r": 130, "t": 15, "b": 45},
+        height=max(520, 90 + len(resumo) * 42),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    figura.update_yaxes(automargin=True)
+    return figura
+
+
+@app.callback(
+    [
+        Output("mensagem-upload-transferencias", "children"),
+        Output("dados-transferencias", "data"),
+    ],
+    Input("upload-transferencias", "contents"),
+    State("upload-transferencias", "filename"),
+    prevent_initial_call=True,
+)
+def processar_upload_transferencias(conteudo, nome_arquivo):
+    if not conteudo:
+        return no_update, no_update
+    try:
+        base = ler_base_transferencias_upload(nome_arquivo, conteudo)
+        if base.empty:
+            raise ValueError("A planilha não possui instrumentos utilizáveis.")
+        salvar_base_transferencias(base)
+        global_total = float(base["Valor Global"].sum())
+        desembolsado = float(base["Valor Desembolsado"].sum())
+        return (
+            dbc.Alert(
+                [
+                    html.I(className="fa-solid fa-circle-check me-2"),
+                    html.Strong("Base financeira atualizada. "),
+                    (
+                        f"{len(base)} instrumento(s), "
+                        f"{base['Convenente / OSC'].nunique()} convenente(s)/OSC(s), "
+                        f"{formatar_moeda_brl(global_total)} de valor global e "
+                        f"{formatar_moeda_brl(desembolsado)} desembolsados."
+                    ),
+                ],
+                color="success",
+                className="rounded-4 mb-0",
+            ),
+            base.to_json(orient="split", force_ascii=False),
+        )
+    except Exception as erro:
+        return (
+            dbc.Alert(
+                [
+                    html.I(className="fa-solid fa-triangle-exclamation me-2"),
+                    html.Strong("Não foi possível carregar a planilha. "),
+                    str(erro),
+                ],
+                color="danger",
+                className="rounded-4 mb-0",
+            ),
+            no_update,
+        )
+
+
+@app.callback(
+    [
+        Output("dados-transferencias", "data", allow_duplicate=True),
+        Output(
+            "mensagem-upload-transferencias",
+            "children",
+            allow_duplicate=True,
+        ),
+    ],
+    Input("botao-restaurar-transferencias", "n_clicks"),
+    prevent_initial_call=True,
+)
+def restaurar_base_transferencias(n_clicks):
+    base = carregar_base_transferencias_padrao()
+    salvar_base_transferencias(base)
+    return (
+        base.to_json(orient="split", force_ascii=False),
+        dbc.Alert(
+            [
+                html.I(className="fa-solid fa-rotate-left me-2"),
+                "A base financeira inicial foi restaurada.",
+            ],
+            color="info",
+            className="rounded-4 mb-0",
+        ),
+    )
+
+
+@app.callback(
+    Output("download-transferencias", "data"),
+    Input("botao-baixar-transferencias", "n_clicks"),
+    State("dados-transferencias", "data"),
+    prevent_initial_call=True,
+)
+def baixar_base_transferencias(n_clicks, dados_transferencias):
+    if not dados_transferencias:
+        return no_update
+    base = pd.read_json(io.StringIO(dados_transferencias), orient="split")
+    base = padronizar_base_transferencias(base)
+    exportar = base.copy()
+    for coluna in [
+        "Valor Global", "Valor Desembolsado", "Valor a Desembolsar",
+    ]:
+        exportar[coluna] = exportar[coluna].map(formatar_moeda_brl)
+    exportar["Percentual Desembolsado"] = exportar[
+        "Percentual Desembolsado"
+    ].map(formatar_percentual_brl)
+    return dcc.send_data_frame(
+        exportar.to_csv,
+        "Transferencias_Voluntarias_Atualizadas.csv",
+        sep=";",
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+
+@app.callback(
+    [
+        Output("filtro-regiao-transferencias", "options"),
+        Output("filtro-uf-transferencias", "options"),
+        Output("filtro-status-transferencias", "options"),
+        Output("filtro-tema-transferencias", "options"),
+        Output("filtro-responsavel-transferencias", "options"),
+        Output("filtro-convenente-transferencias", "options"),
+    ],
+    Input("dados-transferencias", "data"),
+)
+def carregar_filtros_transferencias(dados_transferencias):
+    if not dados_transferencias:
+        return [], [], [], [], [], []
+    base = pd.read_json(io.StringIO(dados_transferencias), orient="split")
+    base = padronizar_base_transferencias(base)
+
+    def opcoes(coluna):
+        valores = sorted(
+            {
+                str(valor).strip()
+                for valor in base[coluna]
+                if str(valor).strip()
+            },
+            key=lambda valor: valor.lower(),
+        )
+        return criar_opcoes(valores)
+
+    return (
+        opcoes("Região"),
+        opcoes("UF"),
+        opcoes("Status"),
+        opcoes("Tema"),
+        opcoes("Responsável"),
+        opcoes("Convenente / OSC"),
+    )
+
+
+@app.callback(
+    [
+        Output("filtro-regiao-transferencias", "value"),
+        Output("filtro-uf-transferencias", "value"),
+        Output("filtro-status-transferencias", "value"),
+        Output("filtro-tema-transferencias", "value"),
+        Output("filtro-responsavel-transferencias", "value"),
+        Output("filtro-convenente-transferencias", "value"),
+    ],
+    Input("botao-limpar-filtros-transferencias", "n_clicks"),
+    prevent_initial_call=True,
+)
+def limpar_filtros_transferencias(n_clicks):
+    return None, None, None, None, None, None
+
+
+@app.callback(
+    [
+        Output("card-valor-global-transferencias", "children"),
+        Output("card-valor-desembolsado-transferencias", "children"),
+        Output("card-valor-restante-transferencias", "children"),
+        Output("card-percentual-transferencias", "children"),
+        Output("card-instrumentos-transferencias", "children"),
+        Output("card-convenentes-transferencias", "children"),
+        Output("resumo-transferencias", "children"),
+        Output("grafico-regiao-transferencias", "figure"),
+        Output("grafico-status-transferencias", "figure"),
+        Output("grafico-convenentes-transferencias", "figure"),
+        Output("tabela-transferencias", "data"),
+    ],
+    [
+        Input("dados-transferencias", "data"),
+        Input("filtro-regiao-transferencias", "value"),
+        Input("filtro-uf-transferencias", "value"),
+        Input("filtro-status-transferencias", "value"),
+        Input("filtro-tema-transferencias", "value"),
+        Input("filtro-responsavel-transferencias", "value"),
+        Input("filtro-convenente-transferencias", "value"),
+    ],
+)
+def atualizar_dashboard_transferencias(
+    dados_transferencias,
+    regiao,
+    uf,
+    status,
+    tema,
+    responsavel,
+    convenente,
+):
+    if dados_transferencias:
+        base = pd.read_json(io.StringIO(dados_transferencias), orient="split")
+        base = padronizar_base_transferencias(base)
+    else:
+        base = pd.DataFrame(columns=COLUNAS_TRANSFERENCIAS)
+
+    filtrada = base.copy()
+    filtros = {
+        "Região": regiao,
+        "UF": uf,
+        "Status": status,
+        "Tema": tema,
+        "Responsável": responsavel,
+        "Convenente / OSC": convenente,
+    }
+    for coluna, valor in filtros.items():
+        if valor:
+            filtrada = filtrada[filtrada[coluna] == valor].copy()
+
+    global_total = float(filtrada["Valor Global"].sum()) if not filtrada.empty else 0
+    desembolsado = (
+        float(filtrada["Valor Desembolsado"].sum())
+        if not filtrada.empty else 0
+    )
+    restante = round(global_total - desembolsado, 2)
+    percentual = desembolsado / global_total if global_total else 0
+    instrumentos = len(filtrada)
+    convenentes = (
+        filtrada["Convenente / OSC"].replace("", pd.NA).nunique()
+        if not filtrada.empty else 0
+    )
+
+    datas = pd.to_datetime(
+        filtrada["Atualização"],
+        dayfirst=True,
+        errors="coerce",
+    ).dropna() if not filtrada.empty else pd.Series(dtype="datetime64[ns]")
+    ultima_atualizacao = (
+        datas.max().strftime("%d/%m/%Y")
+        if not datas.empty else "não informada"
+    )
+
+    if filtrada.empty:
+        resumo = dbc.Alert(
+            "Nenhum instrumento corresponde aos filtros selecionados.",
+            color="light",
+            className="border rounded-4 mb-0",
+        )
+    else:
+        resumo = dbc.Alert(
+            [
+                html.I(className="fa-solid fa-chart-line me-2"),
+                html.Strong("Resumo do recorte: "),
+                (
+                    f"{instrumentos} instrumento(s), {convenentes} "
+                    f"convenente(s)/OSC(s) e {formatar_percentual_brl(percentual)} "
+                    f"do valor global desembolsado. Última atualização "
+                    f"informada na planilha: {ultima_atualizacao}."
+                ),
+            ],
+            color="primary",
+            className="rounded-4 mb-0",
+        )
+
+    tabela = filtrada.sort_values("Valor Global", ascending=False).copy()
+    for coluna in [
+        "Valor Global", "Valor Desembolsado", "Valor a Desembolsar",
+    ]:
+        tabela[coluna] = tabela[coluna].map(formatar_moeda_brl)
+    tabela["Percentual Desembolsado"] = tabela[
+        "Percentual Desembolsado"
+    ].map(formatar_percentual_brl)
+    colunas_tabela = [
+        "Convenente / OSC",
+        "Número do Instrumento",
+        "Número do Processo",
+        "Região",
+        "UF",
+        "Tipo",
+        "Subtipo",
+        "Tema",
+        "Status",
+        "Valor Global",
+        "Valor Desembolsado",
+        "Valor a Desembolsar",
+        "Percentual Desembolsado",
+        "Responsável",
+        "Início",
+        "Término",
+        "Atualização",
+        "Objeto",
+        "Observação",
+    ]
+
+    return (
+        formatar_moeda_brl(global_total),
+        formatar_moeda_brl(desembolsado),
+        formatar_moeda_brl(restante),
+        formatar_percentual_brl(percentual),
+        str(instrumentos),
+        str(convenentes),
+        resumo,
+        criar_grafico_regiao_transferencias(filtrada),
+        criar_grafico_status_transferencias(filtrada),
+        criar_grafico_convenentes_transferencias(filtrada),
+        tabela[colunas_tabela].fillna("").to_dict("records"),
+    )
 
 
 app.clientside_callback(
