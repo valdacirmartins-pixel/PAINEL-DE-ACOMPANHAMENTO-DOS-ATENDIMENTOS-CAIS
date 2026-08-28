@@ -702,22 +702,109 @@ app.index_string = """
         {%css%}
         <style>
             @media print {
-                @page { size: A4 landscape; margin: 8mm; }
-                body, #page-content { background: #ffffff !important; }
-                #navbar-container, .nao-imprimir { display: none !important; }
-                .relatorio-impressao { padding: 0 !important; }
+                @page { size: A4 landscape; margin: 7mm; }
+                html, body, #page-content {
+                    width: 100% !important;
+                    margin: 0 !important;
+                    background: #ffffff !important;
+                    -webkit-print-color-adjust: exact !important;
+                    print-color-adjust: exact !important;
+                }
+                #navbar-container,
+                .nao-imprimir,
+                .cabecalho-pagina-relatorio {
+                    display: none !important;
+                }
+                .container-fluid {
+                    width: 100% !important;
+                    max-width: none !important;
+                    padding: 0 !important;
+                    margin: 0 !important;
+                }
+                .relatorio-impressao {
+                    width: 100% !important;
+                    max-width: none !important;
+                    padding: 0 !important;
+                    margin: 0 !important;
+                    font-size: 8pt !important;
+                }
                 .relatorio-impressao .card {
                     box-shadow: none !important;
                     border: 1px solid #d7e1ed !important;
                     break-inside: avoid;
                 }
-                .quebra-pagina-impressao { break-before: page; }
+                .relatorio-impressao .row {
+                    --bs-gutter-x: 3mm;
+                    --bs-gutter-y: 2mm;
+                    margin-left: calc(-0.5 * var(--bs-gutter-x)) !important;
+                    margin-right: calc(-0.5 * var(--bs-gutter-x)) !important;
+                }
+                .cabecalho-dashboard-relatorio {
+                    margin-bottom: 3mm !important;
+                }
+                .cabecalho-dashboard-relatorio h2 {
+                    font-size: 16pt !important;
+                }
+                .linha-cards-relatorio {
+                    display: flex !important;
+                    flex-wrap: nowrap !important;
+                    margin-bottom: 3mm !important;
+                    break-inside: avoid;
+                }
+                .col-card-relatorio {
+                    flex: 0 0 16.666666% !important;
+                    width: 16.666666% !important;
+                    max-width: 16.666666% !important;
+                    margin-bottom: 0 !important;
+                }
+                .col-card-relatorio .card-body {
+                    min-height: 25mm !important;
+                    padding: 2.5mm !important;
+                }
+                .col-card-relatorio .fs-3 {
+                    font-size: 15pt !important;
+                    line-height: 1.05 !important;
+                }
+                .linha-regional-mapa,
+                .linha-status-temporal {
+                    display: flex !important;
+                    flex-wrap: nowrap !important;
+                    break-inside: avoid;
+                }
+                .col-regional-relatorio {
+                    flex: 0 0 40% !important;
+                    width: 40% !important;
+                    max-width: 40% !important;
+                }
+                .col-mapa-relatorio {
+                    flex: 0 0 60% !important;
+                    width: 60% !important;
+                    max-width: 60% !important;
+                }
+                .col-status-relatorio,
+                .col-temporal-relatorio {
+                    flex: 0 0 50% !important;
+                    width: 50% !important;
+                    max-width: 50% !important;
+                }
+                .linha-status-temporal {
+                    break-before: page;
+                    padding-top: 1mm;
+                }
+                .secao-detalhe-relatorio {
+                    break-before: page;
+                }
+                .secao-ranking-relatorio,
+                .secao-detalhe-relatorio {
+                    break-inside: avoid;
+                }
                 .js-plotly-plot, .dash-table-container { break-inside: avoid; }
                 .grafico-relatorio-mapa,
                 .grafico-relatorio-regional {
-                    height: 112mm !important;
-                    min-height: 112mm !important;
+                    height: 106mm !important;
+                    min-height: 106mm !important;
                     width: 100% !important;
+                    overflow: hidden !important;
                 }
                 .grafico-relatorio-mapa .js-plotly-plot,
                 .grafico-relatorio-mapa .plot-container,
@@ -727,6 +814,34 @@ app.index_string = """
                 .grafico-relatorio-regional .svg-container {
                     height: 100% !important;
                     width: 100% !important;
+                }
+                .grafico-relatorio-secundario {
+                    height: 68mm !important;
+                    min-height: 68mm !important;
+                    width: 100% !important;
+                    overflow: hidden !important;
+                }
+                .grafico-relatorio-ranking {
+                    height: 100mm !important;
+                    min-height: 100mm !important;
+                    width: 100% !important;
+                    overflow: hidden !important;
+                }
+                .grafico-relatorio-secundario .js-plotly-plot,
+                .grafico-relatorio-secundario .plot-container,
+                .grafico-relatorio-secundario .svg-container,
+                .grafico-relatorio-ranking .js-plotly-plot,
+                .grafico-relatorio-ranking .plot-container,
+                .grafico-relatorio-ranking .svg-container {
+                    height: 100% !important;
+                    width: 100% !important;
+                }
+                .secao-detalhe-relatorio .dash-spreadsheet-container {
+                    font-size: 6.5pt !important;
+                }
+                .leitura-regional-relatorio {
+                    font-size: 6.5pt !important;
+                    margin-top: 2mm !important;
                 }
             }
         </style>
@@ -2364,17 +2479,16 @@ def consolidar_atendimentos_no_mapa(base_unidades, dados_cais):
 
     for nome_cais, quantidade in contagem.items():
         nome_normalizado = normalizar_nome_mapa(nome_cais)
+        tokens_nome = {
+            token
+            for token in nome_normalizado.split()
+            if len(token) > 2 and token not in termos_comuns
+        }
         indices = set(indice_alias.get(nome_normalizado, set()))
 
         if not indices and nome_normalizado:
             melhor_alias = None
             melhor_pontuacao = 0.0
-            tokens_nome = {
-                token
-                for token in nome_normalizado.split()
-                if len(token) > 2 and token not in termos_comuns
-            }
-
             for alias in indice_alias:
                 if min(len(alias), len(nome_normalizado)) >= 7 and (
                     alias in nome_normalizado
@@ -2408,6 +2522,59 @@ def consolidar_atendimentos_no_mapa(base_unidades, dados_cais):
         if not indices:
             nao_reconhecidos.append(str(nome_cais))
             continue
+
+        if len(indices) > 1:
+            # Um mesmo nome de OSC pode pertencer a várias unidades. Nessa
+            # situação, escolhe somente a unidade mais compatível com o nome
+            # completo vindo do CAIS para não duplicar o quantitativo no mapa.
+            def pontuacao_indice(indice):
+                linha = unidades.loc[indice]
+                aliases = aliases_linha_mapa(linha)
+                nome_unidade = normalizar_nome_mapa(
+                    linha.get("Nome da Unidade", "")
+                )
+                tokens_unidade = {
+                    token
+                    for token in nome_unidade.split()
+                    if len(token) > 2 and token not in termos_comuns
+                }
+                tokens_alvo = set()
+                for alias in aliases:
+                    tokens_alvo.update(
+                        token
+                        for token in alias.split()
+                        if len(token) > 2 and token not in termos_comuns
+                    )
+                cobertura = (
+                    len(tokens_nome & tokens_alvo) / len(tokens_alvo)
+                    if tokens_alvo
+                    else 0.0
+                )
+                unidade_contida = int(
+                    bool(tokens_unidade)
+                    and tokens_unidade.issubset(tokens_nome)
+                )
+                similaridade = max(
+                    (
+                        SequenceMatcher(
+                            None,
+                            nome_normalizado,
+                            alias,
+                        ).ratio()
+                        for alias in aliases
+                    ),
+                    default=0.0,
+                )
+                return (
+                    unidade_contida,
+                    cobertura,
+                    similaridade,
+                    len(nome_unidade),
+                    -int(indice),
+                )
+
+            melhor_indice = max(indices, key=pontuacao_indice)
+            indices = {melhor_indice}
 
         metricas["nomes_vinculados"] += 1
         metricas["atendimentos_vinculados"] += int(quantidade)
@@ -2485,6 +2652,7 @@ def texto_filtros_relatorio(
     unidade=None,
     data_inicial=None,
     data_final=None,
+    agrupamento=None,
 ):
     filtros = []
     if regiao:
@@ -2505,6 +2673,16 @@ def texto_filtros_relatorio(
             else "data mais recente"
         )
         filtros.append(f"Período: {inicio} a {fim}")
+    rotulos_agrupamento = {
+        "dia": "diária",
+        "semana": "semanal",
+        "quinzena": "quinzenal",
+        "mes": "mensal",
+    }
+    if agrupamento in rotulos_agrupamento:
+        filtros.append(
+            f"Evolução: {rotulos_agrupamento[agrupamento]}"
+        )
     return " | ".join(filtros) if filtros else "Todos os dados disponíveis"
 
 
@@ -2625,6 +2803,137 @@ def resumo_regional_dashboard(unidades):
     return resumo.sort_values("_ordem").drop(columns="_ordem")
 
 
+def remover_duplicidades_relatorio_pdf(atendimentos):
+    """
+    Mantém uma única ocorrência de cada atendimento no PDF.
+
+    Primeiro elimina repetições do Número do Protocolo. Depois aplica o
+    mesmo critério de possível duplicidade usado pela Auditoria: mesma
+    pessoa, no mesmo dia, na mesma unidade, com o mesmo responsável e
+    status. Registros sem dados suficientes para essa comparação são
+    preservados.
+    """
+    if atendimentos is None:
+        return pd.DataFrame(), {
+            "protocolos_repetidos": 0,
+            "possiveis_repetidos": 0,
+            "total_desconsiderado": 0,
+        }
+
+    base = atendimentos.copy()
+    resumo = {
+        "protocolos_repetidos": 0,
+        "possiveis_repetidos": 0,
+        "total_desconsiderado": 0,
+    }
+    if base.empty:
+        return base, resumo
+
+    colunas = localizar_colunas(base)
+    if colunas.get("protocolo"):
+        protocolos = serie_texto(base, colunas["protocolo"])
+        protocolos_normalizados = normalizar_serie_auditoria(protocolos)
+        repeticoes_protocolo = (
+            (protocolos_normalizados != "")
+            & protocolos_normalizados.duplicated(keep="first")
+        )
+        resumo["protocolos_repetidos"] = int(
+            repeticoes_protocolo.sum()
+        )
+        base = base.loc[~repeticoes_protocolo].copy()
+
+    colunas = localizar_colunas(base)
+    if colunas.get("nome") and colunas.get("criado"):
+        registro_sem_dados = mascara_sem_dados_atendimento(base)
+        nomes = normalizar_serie_auditoria(base[colunas["nome"]])
+        datas = (
+            converter_datas(base[colunas["criado"]])
+            .dt.strftime("%Y-%m-%d")
+            .fillna("")
+        )
+        unidades = (
+            normalizar_serie_auditoria(base[colunas["unidade"]])
+            if colunas.get("unidade")
+            else pd.Series("", index=base.index)
+        )
+        usuarios = (
+            normalizar_serie_auditoria(base[colunas["usuario"]])
+            if colunas.get("usuario")
+            else pd.Series("", index=base.index)
+        )
+        status = (
+            normalizar_serie_auditoria(base[colunas["status"]])
+            if colunas.get("status")
+            else pd.Series("", index=base.index)
+        )
+        chave = pd.DataFrame(
+            {
+                "nome": nomes,
+                "data": datas,
+                "unidade": unidades,
+                "usuario": usuarios,
+                "status": status,
+            },
+            index=base.index,
+        )
+        chave_valida = (
+            (chave["nome"] != "")
+            & (chave["data"] != "")
+            & (chave["unidade"] != "")
+            & (chave["usuario"] != "")
+            & (~registro_sem_dados)
+        )
+        possiveis_repeticoes = (
+            chave_valida
+            & chave.duplicated(
+                subset=[
+                    "nome",
+                    "data",
+                    "unidade",
+                    "usuario",
+                    "status",
+                ],
+                keep="first",
+            )
+        )
+        resumo["possiveis_repetidos"] = int(
+            possiveis_repeticoes.sum()
+        )
+        base = base.loc[~possiveis_repeticoes].copy()
+
+    resumo["total_desconsiderado"] = (
+        resumo["protocolos_repetidos"]
+        + resumo["possiveis_repetidos"]
+    )
+    return base.reset_index(drop=True), resumo
+
+
+def preparar_dados_relatorio_sem_duplicidades(unidades, atendimentos):
+    atendimentos_unicos, resumo_duplicidades = (
+        remover_duplicidades_relatorio_pdf(atendimentos)
+    )
+    if unidades is None:
+        return pd.DataFrame(), atendimentos_unicos, resumo_duplicidades
+    if unidades.empty:
+        return unidades.copy(), atendimentos_unicos, resumo_duplicidades
+
+    base_geografica = unidades[COLUNAS_UNIDADES_MAPA].copy()
+    dados_unicos = (
+        atendimentos_unicos.to_json(
+            orient="split",
+            force_ascii=False,
+            date_format="iso",
+        )
+        if not atendimentos_unicos.empty
+        else None
+    )
+    unidades_integradas, _ = consolidar_atendimentos_no_mapa(
+        base_geografica,
+        dados_unicos,
+    )
+    return unidades_integradas, atendimentos_unicos, resumo_duplicidades
+
+
 def criar_mapa_dashboard_relatorio(unidades):
     pontos = unidades[
         unidades["Latitude"].notna()
@@ -2636,6 +2945,9 @@ def criar_mapa_dashboard_relatorio(unidades):
     pontos["Região"] = pontos["Região"].fillna("").astype(str).str.strip()
     pontos.loc[pontos["Região"] == "", "Região"] = "Não informado"
     centro, zoom = enquadramento_mapa(pontos)
+    # No relatório, o mapa ocupa um quadro mais largo. Um zoom mínimo evita
+    # excesso de oceano e mantém o Brasil bem enquadrado na impressão.
+    zoom = max(float(zoom), 3.15)
     argumentos = {
         "data_frame": pontos,
         "lat": "Latitude",
@@ -2785,7 +3097,14 @@ def construir_previa_dashboard_relatorio(
     unidades,
     atendimentos,
     texto_filtros,
+    agrupamento="dia",
 ):
+    unidades, atendimentos, resumo_duplicidades = (
+        preparar_dados_relatorio_sem_duplicidades(
+            unidades,
+            atendimentos,
+        )
+    )
     metricas = calcular_metricas(atendimentos) if not atendimentos.empty else {
         "total": 0,
         "pessoas": 0,
@@ -2839,6 +3158,16 @@ def construir_previa_dashboard_relatorio(
                                 texto_filtros,
                                 className="text-muted mb-0",
                             ),
+                            html.Small(
+                                (
+                                    "Contagem sem duplicidades: "
+                                    f"{metricas.get('total', 0)} atendimento(s) "
+                                    "único(s); "
+                                    f"{resumo_duplicidades['total_desconsiderado']} "
+                                    "repetição(ões) desconsiderada(s)."
+                                ),
+                                className="text-success fw-semibold",
+                            ),
                         ]
                     ),
                     html.Div(
@@ -2848,7 +3177,7 @@ def construir_previa_dashboard_relatorio(
                 ],
                 className=(
                     "d-flex flex-column flex-md-row justify-content-between "
-                    "align-items-md-end mb-4"
+                    "align-items-md-end mb-4 cabecalho-dashboard-relatorio"
                 ),
             ),
             dbc.Row(
@@ -2858,45 +3187,51 @@ def construir_previa_dashboard_relatorio(
                             "Unidades no recorte", len(unidades),
                             "fa-solid fa-building", "#168821",
                         ),
-                        xs=6, md=4, xl=2, className="mb-3",
+                        xs=6, md=4, xl=2,
+                        className="mb-3 col-card-relatorio",
                     ),
                     dbc.Col(
                         criar_card_dashboard_relatorio(
                             "Pontos no mapa", pontos,
                             "fa-solid fa-location-dot", "#D32F2F",
                         ),
-                        xs=6, md=4, xl=2, className="mb-3",
+                        xs=6, md=4, xl=2,
+                        className="mb-3 col-card-relatorio",
                     ),
                     dbc.Col(
                         criar_card_dashboard_relatorio(
-                            "Atendimentos", metricas.get("total", 0),
+                            "Atendimentos únicos", metricas.get("total", 0),
                             "fa-solid fa-handshake-angle", "#1351B4",
                         ),
-                        xs=6, md=4, xl=2, className="mb-3",
+                        xs=6, md=4, xl=2,
+                        className="mb-3 col-card-relatorio",
                     ),
                     dbc.Col(
                         criar_card_dashboard_relatorio(
                             "Pessoas identificadas", metricas.get("pessoas", 0),
                             "fa-solid fa-people-group", "#8E44AD",
                         ),
-                        xs=6, md=4, xl=2, className="mb-3",
+                        xs=6, md=4, xl=2,
+                        className="mb-3 col-card-relatorio",
                     ),
                     dbc.Col(
                         criar_card_dashboard_relatorio(
                             "Usuários do sistema", metricas.get("usuarios", 0),
                             "fa-solid fa-user-gear", "#E6A700",
                         ),
-                        xs=6, md=4, xl=2, className="mb-3",
+                        xs=6, md=4, xl=2,
+                        className="mb-3 col-card-relatorio",
                     ),
                     dbc.Col(
                         criar_card_dashboard_relatorio(
                             "Pendências", metricas.get("pendencias", 0),
                             "fa-solid fa-triangle-exclamation", "#C62828",
                         ),
-                        xs=6, md=4, xl=2, className="mb-3",
+                        xs=6, md=4, xl=2,
+                        className="mb-3 col-card-relatorio",
                     ),
                 ],
-                className="g-3 mb-2",
+                className="g-3 mb-2 linha-cards-relatorio",
             ),
             dbc.Row(
                 [
@@ -2930,7 +3265,8 @@ def construir_previa_dashboard_relatorio(
                             ),
                             className="border-0 rounded-4 h-100 print-card",
                         ),
-                        xs=12, lg=5, className="mb-3",
+                        xs=12, lg=5,
+                        className="mb-3 col-regional-relatorio",
                     ),
                     dbc.Col(
                         dbc.Card(
@@ -2963,10 +3299,11 @@ def construir_previa_dashboard_relatorio(
                             ),
                             className="border-0 rounded-4 h-100 print-card",
                         ),
-                        xs=12, lg=7, className="mb-3",
+                        xs=12, lg=7,
+                        className="mb-3 col-mapa-relatorio",
                     ),
                 ],
-                className="g-3 quebra-pagina-impressao",
+                className="g-3 linha-regional-mapa",
             ),
             dbc.Row(
                 [
@@ -2994,15 +3331,27 @@ def construir_previa_dashboard_relatorio(
                             ),
                             className="border-0 rounded-4 h-100 print-card",
                         ),
-                        xs=12, lg=6, className="mb-3",
+                        xs=12, lg=6,
+                        className="mb-3 col-status-relatorio",
                     ),
                     dbc.Col(
                         dbc.Card(
                             dbc.CardBody(
                                 [
-                                    html.H5("Evolução mensal", className="fw-bold"),
+                                    html.H5(
+                                        {
+                                            "dia": "Evolução diária",
+                                            "semana": "Evolução semanal",
+                                            "quinzena": "Evolução quinzenal",
+                                            "mes": "Evolução mensal",
+                                        }.get(agrupamento, "Evolução diária"),
+                                        className="fw-bold",
+                                    ),
                                     dcc.Graph(
-                                        figure=grafico_temporal(atendimentos, "mes"),
+                                        figure=grafico_temporal(
+                                            atendimentos,
+                                            agrupamento,
+                                        ),
                                         config={
                                             "displayModeBar": False,
                                             "responsive": True,
@@ -3020,10 +3369,11 @@ def construir_previa_dashboard_relatorio(
                             ),
                             className="border-0 rounded-4 h-100 print-card",
                         ),
-                        xs=12, lg=6, className="mb-3",
+                        xs=12, lg=6,
+                        className="mb-3 col-temporal-relatorio",
                     ),
                 ],
-                className="g-3",
+                className="g-3 linha-status-temporal",
             ),
             dbc.Card(
                 dbc.CardBody(
@@ -3046,7 +3396,10 @@ def construir_previa_dashboard_relatorio(
                     ],
                     className="p-3",
                 ),
-                className="border-0 rounded-4 mb-3 print-card",
+                className=(
+                    "border-0 rounded-4 mb-3 print-card "
+                    "secao-ranking-relatorio"
+                ),
             ),
             dbc.Card(
                 dbc.CardBody(
@@ -3068,7 +3421,7 @@ def construir_previa_dashboard_relatorio(
                                     ("Município", "Município"),
                                     ("Unidade / OSC", "Nome para exibição"),
                                     ("Fase", "Fase"),
-                                    ("Atendimentos", "Atendimentos CAIS"),
+                                    ("Atendimentos únicos", "Atendimentos CAIS"),
                                 ]
                             ],
                             data=dados_tabela,
@@ -3091,7 +3444,10 @@ def construir_previa_dashboard_relatorio(
                     ],
                     className="p-3 p-md-4",
                 ),
-                className="border-0 rounded-4 mb-3 print-card",
+                className=(
+                    "border-0 rounded-4 mb-3 print-card "
+                    "secao-detalhe-relatorio"
+                ),
             ),
             html.Div(
                 [
@@ -3105,7 +3461,10 @@ def construir_previa_dashboard_relatorio(
                         else "sem dados regionais no recorte"
                     ),
                 ],
-                className="small text-muted mt-2",
+                className=(
+                    "small text-muted mt-2 "
+                    "leitura-regional-relatorio"
+                ),
             ),
         ],
         className="relatorio-impressao",
@@ -3116,6 +3475,7 @@ def gerar_pdf_dashboard_bytes(
     unidades,
     atendimentos,
     texto_filtros,
+    agrupamento="dia",
 ):
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -3217,6 +3577,12 @@ def gerar_pdf_dashboard_bytes(
     def numero(valor):
         return f"{int(valor):,}".replace(",", ".")
 
+    unidades, atendimentos, resumo_duplicidades = (
+        preparar_dados_relatorio_sem_duplicidades(
+            unidades,
+            atendimentos,
+        )
+    )
     metricas = calcular_metricas(atendimentos) if not atendimentos.empty else {
         "total": 0,
         "pessoas": 0,
@@ -3266,12 +3632,21 @@ def gerar_pdf_dashboard_bytes(
             agora_brasilia().strftime("Gerado em %d/%m/%Y às %H:%M"),
             estilos["TextoCAIS"],
         ),
+        Paragraph(
+            (
+                "Contagem sem duplicidades: "
+                f"{numero(metricas.get('total', 0))} atendimento(s) único(s); "
+                f"{numero(resumo_duplicidades['total_desconsiderado'])} "
+                "repetição(ões) desconsiderada(s)."
+            ),
+            estilos["TextoCAIS"],
+        ),
         Spacer(1, 5 * mm),
     ]
     cards = [
         card_pdf(len(unidades), "Unidades no recorte"),
         card_pdf(pontos, "Pontos no mapa"),
-        card_pdf(metricas.get("total", 0), "Atendimentos"),
+        card_pdf(metricas.get("total", 0), "Atendimentos únicos"),
         card_pdf(metricas.get("pessoas", 0), "Pessoas identificadas"),
         card_pdf(metricas.get("usuarios", 0), "Usuários do sistema"),
         card_pdf(metricas.get("pendencias", 0), "Pendências"),
@@ -3294,7 +3669,9 @@ def gerar_pdf_dashboard_bytes(
         ]
     )
 
-    cabecalho_regional = ["Região", "Unidades", "Pontos", "Atendimentos"]
+    cabecalho_regional = [
+        "Região", "Unidades", "Pontos", "Atendimentos únicos"
+    ]
     linhas_regionais = [cabecalho_regional]
     for _, linha in resumo_regional.iterrows():
         linhas_regionais.append(
@@ -3378,14 +3755,76 @@ def gerar_pdf_dashboard_bytes(
             ]
         )
     )
-    historia.extend([comparativo, Spacer(1, 5 * mm)])
+    historia.extend([comparativo, Spacer(1, 4 * mm)])
+
+    rotulos_temporais = {
+        "dia": "Evolução diária",
+        "semana": "Evolução semanal",
+        "quinzena": "Evolução quinzenal",
+        "mes": "Evolução mensal",
+    }
+    evolucao = tabela_tempo(atendimentos, agrupamento).tail(5)
+    linhas_evolucao = [["Período", "Atendimentos únicos"]]
+    for _, linha in evolucao.iterrows():
+        linhas_evolucao.append(
+            [str(linha["Label"]), numero(linha["Atendimentos"])]
+        )
+    if len(linhas_evolucao) == 1:
+        linhas_evolucao.append(["Sem datas válidas", "0"])
+    tabela_evolucao = Table(
+        linhas_evolucao,
+        colWidths=[205 * mm, 30 * mm],
+        repeatRows=1,
+        hAlign="LEFT",
+    )
+    tabela_evolucao.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8E44AD")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+                ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D7E1ED")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#FAF6FC")]),
+                ("ALIGN", (1, 1), (1, -1), "RIGHT"),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
+    historia.extend(
+        [
+            KeepTogether(
+                [
+                    Paragraph(
+                        rotulos_temporais.get(
+                            agrupamento,
+                            "Evolução diária",
+                        ),
+                        estilos["SubtituloCAIS"],
+                    ),
+                    Paragraph(
+                        (
+                            "São apresentados os 5 períodos mais recentes "
+                            "do recorte."
+                        ),
+                        estilos["TextoCAIS"],
+                    ),
+                    Spacer(1, 2 * mm),
+                    tabela_evolucao,
+                ]
+            ),
+            Spacer(1, 5 * mm),
+        ]
+    )
 
     col_unidade = colunas_atendimento.get("unidade")
     ranking = pd.Series(dtype="int64")
     if col_unidade and not atendimentos.empty:
         valores = serie_texto(atendimentos, col_unidade)
         ranking = valores[valores != ""].value_counts().head(10)
-    ranking_linhas = [["Unidade / OSC", "Atendimentos"]]
+    ranking_linhas = [["Unidade / OSC", "Atendimentos únicos"]]
     for nome_unidade, quantidade in ranking.items():
         ranking_linhas.append(
             [
@@ -3607,7 +4046,7 @@ def gerar_pdf_dashboard_bytes(
     desenho_barras.add(
         String(
             16, 28,
-            f"Atendimentos vinculados: {numero(total_atendimentos)}",
+            f"Atendimentos únicos vinculados: {numero(total_atendimentos)}",
             fontName="Helvetica",
             fontSize=8,
             fillColor=colors.HexColor("#4A5B73"),
@@ -8958,7 +9397,10 @@ relatorios_layout = dbc.Container(
                     className="mt-3 mt-lg-0 nao-imprimir",
                 ),
             ],
-            className="g-3 align-items-end mb-4",
+            className=(
+                "g-3 align-items-end mb-4 "
+                "cabecalho-pagina-relatorio"
+            ),
         ),
         dbc.Alert(
             [
@@ -8987,7 +9429,7 @@ relatorios_layout = dbc.Container(
                                         clearable=True,
                                     ),
                                 ],
-                                xs=12, sm=6, xl=3, className="mb-3",
+                                xs=12, sm=6, lg=4, xl=2, className="mb-3",
                             ),
                             dbc.Col(
                                 [
@@ -8998,7 +9440,7 @@ relatorios_layout = dbc.Container(
                                         clearable=True,
                                     ),
                                 ],
-                                xs=12, sm=6, xl=3, className="mb-3",
+                                xs=12, sm=6, lg=4, xl=2, className="mb-3",
                             ),
                             dbc.Col(
                                 [
@@ -9009,7 +9451,39 @@ relatorios_layout = dbc.Container(
                                         clearable=True,
                                     ),
                                 ],
-                                xs=12, sm=6, xl=3, className="mb-3",
+                                xs=12, sm=6, lg=4, xl=3, className="mb-3",
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label(
+                                        "Agrupar por",
+                                        className="fw-semibold",
+                                    ),
+                                    dcc.Dropdown(
+                                        id="agrupamento-relatorio",
+                                        options=[
+                                            {
+                                                "label": "Dia",
+                                                "value": "dia",
+                                            },
+                                            {
+                                                "label": "Semana",
+                                                "value": "semana",
+                                            },
+                                            {
+                                                "label": "Quinzena",
+                                                "value": "quinzena",
+                                            },
+                                            {
+                                                "label": "Mês",
+                                                "value": "mes",
+                                            },
+                                        ],
+                                        value="dia",
+                                        clearable=False,
+                                    ),
+                                ],
+                                xs=12, sm=6, lg=4, xl=2, className="mb-3",
                             ),
                             dbc.Col(
                                 [
@@ -9022,7 +9496,7 @@ relatorios_layout = dbc.Container(
                                         clearable=True,
                                     ),
                                 ],
-                                xs=12, sm=6, xl=3, className="mb-3",
+                                xs=12, sm=6, lg=8, xl=3, className="mb-3",
                             ),
                         ],
                         className="g-3",
@@ -12761,6 +13235,7 @@ def carregar_filtros_dashboard_relatorio(dados_unidades):
         Output("filtro-regiao-relatorio", "value"),
         Output("filtro-uf-relatorio", "value"),
         Output("filtro-unidade-relatorio", "value"),
+        Output("agrupamento-relatorio", "value"),
         Output("filtro-periodo-relatorio", "start_date"),
         Output("filtro-periodo-relatorio", "end_date"),
     ],
@@ -12768,7 +13243,7 @@ def carregar_filtros_dashboard_relatorio(dados_unidades):
     prevent_initial_call=True,
 )
 def limpar_filtros_dashboard_relatorio(n_clicks):
-    return None, None, None, None, None
+    return None, None, None, "dia", None, None
 
 
 @app.callback(
@@ -12779,6 +13254,7 @@ def limpar_filtros_dashboard_relatorio(n_clicks):
         Input("filtro-regiao-relatorio", "value"),
         Input("filtro-uf-relatorio", "value"),
         Input("filtro-unidade-relatorio", "value"),
+        Input("agrupamento-relatorio", "value"),
         Input("filtro-periodo-relatorio", "start_date"),
         Input("filtro-periodo-relatorio", "end_date"),
     ],
@@ -12789,6 +13265,7 @@ def atualizar_dashboard_relatorio(
     regiao,
     uf,
     unidade,
+    agrupamento,
     data_inicial,
     data_final,
 ):
@@ -12807,11 +13284,13 @@ def atualizar_dashboard_relatorio(
         unidade,
         data_inicial,
         data_final,
+        agrupamento,
     )
     return construir_previa_dashboard_relatorio(
         unidades,
         atendimentos,
         filtros,
+        agrupamento,
     )
 
 
@@ -12827,6 +13306,7 @@ def atualizar_dashboard_relatorio(
         State("filtro-regiao-relatorio", "value"),
         State("filtro-uf-relatorio", "value"),
         State("filtro-unidade-relatorio", "value"),
+        State("agrupamento-relatorio", "value"),
         State("filtro-periodo-relatorio", "start_date"),
         State("filtro-periodo-relatorio", "end_date"),
     ],
@@ -12839,6 +13319,7 @@ def baixar_dashboard_pdf(
     regiao,
     uf,
     unidade,
+    agrupamento,
     data_inicial,
     data_final,
 ):
@@ -12858,11 +13339,13 @@ def baixar_dashboard_pdf(
             unidade,
             data_inicial,
             data_final,
+            agrupamento,
         )
         pdf = gerar_pdf_dashboard_bytes(
             unidades,
             atendimentos,
             filtros,
+            agrupamento,
         )
         nome_arquivo = (
             "dashboard_cais_"
@@ -12912,9 +13395,27 @@ app.clientside_callback(
         if (!n_clicks) {
             return window.dash_clientside.no_update;
         }
+        const redimensionarGraficos = function() {
+            window.dispatchEvent(new Event('resize'));
+            if (window.Plotly) {
+                document.querySelectorAll(
+                    '.relatorio-impressao .js-plotly-plot'
+                ).forEach(function(grafico) {
+                    try {
+                        window.Plotly.Plots.resize(grafico);
+                    } catch (erro) {
+                        // O redimensionamento global continua válido.
+                    }
+                });
+            }
+        };
+        redimensionarGraficos();
         window.setTimeout(function() {
-            window.print();
-        }, 350);
+            redimensionarGraficos();
+            window.setTimeout(function() {
+                window.print();
+            }, 250);
+        }, 450);
         return "";
     }
     """,
