@@ -2145,29 +2145,12 @@ def normalizar_nome_mapa(texto):
     return re.sub(r"\s+", " ", texto).strip()
 
 
-# Unidades que não devem compor os indicadores do monitoramento.
-# Inclui ambientes administrativos e unidades retiradas do recorte.
+# Ambientes exclusivamente administrativos, sem atendimento ao público.
 # Os registros permanecem nos arquivos originais enviados, mas são ignorados
 # em contagens, filtros, gráficos, mapa, tabelas e relatórios do painel.
 UNIDADES_IGNORADAS_CAIS = (
     "CIDADANIA POP RUA (DF) - Administração Teste",
     "Cidadania Pop Rua: CAIS + PAR (administrativo)",
-    # CARITAS BRASILEIRA (SC) 1 - ALINE SILVA DE SALLES
-    "CIDADANIA POP RUA (SC) - CARITAS BRASILEIRA (SC) 1 - ALINE SILVA DE SALLES",
-    "CARITAS BRASILEIRA (SC) 1 - ALINE SILVA DE SALLES",
-    "Cidadania PopRua - Aline Silva de Salles",
-    # UFRJ 4 - ESPAÇO DA DIGNIDADE
-    "CIDADANIA POP RUA (RJ) - UNIVERSIDADE FEDERAL DO RIO DE JANEIRO (UFRJ) 4 - ESPACO DA DIGNIDADE",
-    "UNIVERSIDADE FEDERAL DO RIO DE JANEIRO (UFRJ) 4 - ESPACO DA DIGNIDADE",
-    "Cidadania PopRua - Espaço da Dignidade",
-    # NÚCLEO PERIFÉRICO - NOME FANTASIA
-    "CIDADANIA POP RUA (PR) - ASSOCIACAO DE DESENVOLVIMENTO HUMANO E FOMENTO CULTURAL (NUCLEO PERIFERICO) - NOME FANTASIA",
-    "ASSOCIACAO DE DESENVOLVIMENTO HUMANO E FOMENTO CULTURAL (NUCLEO PERIFERICO) - NOME FANTASIA",
-    "ASSOCIACAO DE DESENVOLVIMENTO HUMANO E FOMENTO CULTURAL (NUCLEO PERIFERICO)",
-    # INSTITUTO BECEI 2 - CARLINHOS ARQUINO
-    "CIDADANIA POP RUA (SP) - INSTITUTO BECEI 2 - CARLINHOS ARQUINO",
-    "INSTITUTO BECEI 2 - CARLINHOS ARQUINO",
-    "Cidadania PopRua - Carlinhos Arquino",
 )
 
 UNIDADES_IGNORADAS_NORMALIZADAS = frozenset(
@@ -2212,6 +2195,44 @@ def excluir_unidades_ignoradas(df):
     mascara = mascara_unidades_ignoradas(df)
     quantidade = int(mascara.sum())
     return df.loc[~mascara].copy(), quantidade
+
+
+def mascara_unidades_em_funcionamento(df):
+    """Identifica unidades operacionais sem removê-las do cadastro ou mapa."""
+    if df is None or df.empty:
+        indice = df.index if isinstance(df, pd.DataFrame) else None
+        return pd.Series(False, index=indice, dtype=bool)
+
+    fase = (
+        serie_texto(df, "Fase").map(normalizar_nome_mapa)
+        if "Fase" in df.columns
+        else pd.Series("", index=df.index, dtype="object")
+    )
+    situacao = (
+        serie_texto(df, "Situação").map(normalizar_nome_mapa)
+        if "Situação" in df.columns
+        else pd.Series("", index=df.index, dtype="object")
+    )
+    descricao = (fase + " " + situacao).str.strip()
+
+    operacional = (
+        descricao.str.contains(r"\bem funcionamento\b", regex=True)
+        | descricao.str.contains(r"\boperacional\b", regex=True)
+        | descricao.str.contains(r"(?:^|\s)ativ[ao](?:\s|$)", regex=True)
+    )
+    indicacao_negativa = descricao.str.contains(
+        (
+            r"\bnao\b.{0,24}\b(?:funcionamento|operacional)\b"
+            r"|\bfora de funcionamento\b"
+            r"|\b(?:inativ|desativ|suspens|encerrad)[a-z]*\b"
+        ),
+        regex=True,
+    )
+    return operacional & ~indicacao_negativa
+
+
+def contar_unidades_em_funcionamento(df):
+    return int(mascara_unidades_em_funcionamento(df).sum())
 
 
 def valor_generico_mapa(texto):
@@ -2882,6 +2903,9 @@ def resumo_regional_dashboard(unidades):
         base["Latitude"].notna()
         & base["Longitude"].notna()
     ).astype(int)
+    base["Unidade em funcionamento"] = (
+        mascara_unidades_em_funcionamento(base).astype(int)
+    )
     base["Atendimentos CAIS"] = pd.to_numeric(
         base["Atendimentos CAIS"],
         errors="coerce",
@@ -2889,7 +2913,7 @@ def resumo_regional_dashboard(unidades):
     resumo = (
         base.groupby("Região", as_index=False)
         .agg(
-            Unidades=("Nome para exibição", "size"),
+            Unidades=("Unidade em funcionamento", "sum"),
             Pontos=("Ponto mapeável", "sum"),
             Atendimentos=("Atendimentos CAIS", "sum"),
         )
@@ -3119,7 +3143,7 @@ def criar_grafico_regional_dashboard(unidades):
     figura.update_layout(
         autosize=True,
         showlegend=False,
-        xaxis_title="Unidades cadastradas",
+        xaxis_title="Unidades em funcionamento",
         yaxis_title=None,
         margin={"l": 15, "r": 45, "t": 15, "b": 45},
         height=None,
@@ -3365,7 +3389,8 @@ def construir_previa_dashboard_relatorio(
                 [
                     dbc.Col(
                         criar_card_dashboard_relatorio(
-                            "Unidades no recorte", len(unidades),
+                            "Unidades em funcionamento",
+                            contar_unidades_em_funcionamento(unidades),
                             "fa-solid fa-building", "#168821",
                         ),
                         xs=6, md=4, xl=2,
@@ -3421,7 +3446,7 @@ def construir_previa_dashboard_relatorio(
                             dbc.CardBody(
                                 [
                                     html.H5(
-                                        "Unidades por região",
+                                        "Unidades em funcionamento por região",
                                         className="fw-bold mb-2",
                                     ),
                                     dcc.Graph(
@@ -3829,7 +3854,10 @@ def gerar_pdf_dashboard_bytes(
         Spacer(1, 5 * mm),
     ]
     cards = [
-        card_pdf(len(unidades), "Unidades no recorte"),
+        card_pdf(
+            contar_unidades_em_funcionamento(unidades),
+            "Unidades em funcionamento",
+        ),
         card_pdf(pontos, "Pontos no mapa"),
         card_pdf(metricas.get("total", 0), "Atendimentos únicos"),
         card_pdf(metricas.get("pessoas", 0), "Pessoas identificadas"),
@@ -3855,7 +3883,7 @@ def gerar_pdf_dashboard_bytes(
     )
 
     cabecalho_regional = [
-        "Região", "Unidades", "Pontos", "Atendimentos únicos"
+        "Região", "Em funcionamento", "Pontos", "Atendimentos únicos"
     ]
     linhas_regionais = [cabecalho_regional]
     for _, linha in resumo_regional.iterrows():
@@ -4171,7 +4199,7 @@ def gerar_pdf_dashboard_bytes(
     desenho_barras.add(
         String(
             16, altura_barras - 22,
-            "Unidades por região",
+            "Unidades em funcionamento por região",
             fontName="Helvetica-Bold",
             fontSize=11,
             fillColor=colors.HexColor("#071D41"),
@@ -4222,7 +4250,7 @@ def gerar_pdf_dashboard_bytes(
     desenho_barras.add(
         String(
             16, 45,
-            f"Total: {numero(total_unidades)} unidade(s)",
+            f"Total em funcionamento: {numero(total_unidades)} unidade(s)",
             fontName="Helvetica-Bold",
             fontSize=9,
             fillColor=colors.HexColor("#071D41"),
@@ -9293,7 +9321,7 @@ mapa_unidades_layout = dbc.Container(
             [
                 dbc.Col(
                     criar_card(
-                        "Registros na planilha",
+                        "Unidades em funcionamento",
                         "0",
                         "fa-solid fa-building",
                         "card-registros-mapa",
@@ -9378,7 +9406,7 @@ mapa_unidades_layout = dbc.Container(
                                         id="metrica-regional-mapa",
                                         options=[
                                             {
-                                                "label": "Unidades cadastradas",
+                                                "label": "Unidades em funcionamento",
                                                 "value": "unidades",
                                             },
                                             {
@@ -13076,18 +13104,21 @@ def atualizar_resumo_regional_mapa(
         filtrada["Latitude"].notna()
         & filtrada["Longitude"].notna()
     ).astype(int)
+    filtrada["Unidade em funcionamento"] = (
+        mascara_unidades_em_funcionamento(filtrada).astype(int)
+    )
 
     resumo = (
         filtrada.groupby("Região", as_index=False)
         .agg(
-            Unidades=("Nome para exibição", "size"),
+            Unidades=("Unidade em funcionamento", "sum"),
             Pontos=("Ponto mapeável", "sum"),
             Atendimentos=("Atendimentos CAIS", "sum"),
         )
     )
 
     configuracoes = {
-        "unidades": ("Unidades", "Unidades cadastradas"),
+        "unidades": ("Unidades", "Unidades em funcionamento"),
         "pontos": ("Pontos", "Pontos mapeáveis"),
         "atendimentos": ("Atendimentos", "Atendimentos CAIS"),
     }
@@ -13141,6 +13172,17 @@ def atualizar_resumo_regional_mapa(
     )
 
     maior_valor = int(resumo[coluna_valor].max())
+    if maior_valor == 0:
+        destaque = dbc.Alert(
+            [
+                html.I(className="fa-solid fa-circle-info me-2"),
+                f"Nenhum valor contabilizado em {rotulo.lower()} neste recorte.",
+            ],
+            color="light",
+            className="border rounded-4 mb-0 py-2",
+        )
+        return figura, destaque
+
     lideres = resumo.loc[
         resumo[coluna_valor] == maior_valor,
         "Região",
@@ -13375,7 +13417,7 @@ def atualizar_mapa_unidades(
 
     return (
         figura,
-        str(len(base)),
+        str(contar_unidades_em_funcionamento(filtrada)),
         str(len(pontos)),
         str(metricas["atendimentos_vinculados"]),
         str(sem_coordenadas),
