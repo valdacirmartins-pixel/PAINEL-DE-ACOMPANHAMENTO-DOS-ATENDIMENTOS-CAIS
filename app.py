@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
 from dash import Dash, html, dcc, dash_table, no_update, ctx
 from dash.dependencies import Input, Output, State
@@ -2262,17 +2263,39 @@ def normalizar_nome_mapa(texto):
     return re.sub(r"\s+", " ", texto).strip()
 
 
-# Ambientes exclusivamente administrativos, sem atendimento ao público.
-# Os registros permanecem nos arquivos originais enviados, mas são ignorados
-# em contagens, filtros, gráficos, mapa, tabelas e relatórios do painel.
+# Unidades que não devem participar dos indicadores do painel.
+# A regra também funciona quando OSC e unidade chegam em colunas separadas.
 UNIDADES_IGNORADAS_CAIS = (
     "CIDADANIA POP RUA (DF) - Administração Teste",
     "Cidadania Pop Rua: CAIS + PAR (administrativo)",
+    "CARITAS BRASILEIRA (SC) 1 - ALINE SILVA DE SALLES",
+    (
+        "UNIVERSIDADE FEDERAL DO RIO DE JANEIRO (UFRJ) 4 - "
+        "ESPACO DA DIGNIDADE"
+    ),
+    (
+        "ASSOCIACAO DE DESENVOLVIMENTO HUMANO E FOMENTO CULTURAL "
+        "(NUCLEO PERIFERICO) - NOME FANTASIA"
+    ),
+    "INSTITUTO BECEI 2 - CARLINHOS ARQUINO",
 )
 
-UNIDADES_IGNORADAS_NORMALIZADAS = frozenset(
-    normalizar_nome_mapa(nome)
-    for nome in UNIDADES_IGNORADAS_CAIS
+REGRAS_UNIDADES_IGNORADAS_CAIS = tuple(
+    tuple(normalizar_nome_mapa(termo) for termo in termos)
+    for termos in (
+        ("Administração Teste",),
+        ("CAIS PAR administrativo",),
+        ("CARITAS BRASILEIRA SC", "ALINE SILVA DE SALLES"),
+        (
+            "UNIVERSIDADE FEDERAL DO RIO DE JANEIRO UFRJ",
+            "ESPACO DA DIGNIDADE",
+        ),
+        (
+            "ASSOCIACAO DE DESENVOLVIMENTO HUMANO E FOMENTO CULTURAL "
+            "NUCLEO PERIFERICO",
+        ),
+        ("INSTITUTO BECEI", "CARLINHOS ARQUINO"),
+    )
 )
 
 COLUNAS_REFERENCIA_UNIDADE_CAIS = frozenset(
@@ -2292,14 +2315,23 @@ def mascara_unidades_ignoradas(df):
         indice = df.index if isinstance(df, pd.DataFrame) else None
         return pd.Series(False, index=indice, dtype=bool)
 
-    mascara = pd.Series(False, index=df.index, dtype=bool)
+    texto_unidade = pd.Series("", index=df.index, dtype="object")
     for coluna in df.columns:
         if normalizar_nome_mapa(coluna) not in COLUNAS_REFERENCIA_UNIDADE_CAIS:
             continue
         valores = serie_texto(df, coluna).map(normalizar_nome_mapa)
-        mascara = mascara | valores.isin(
-            UNIDADES_IGNORADAS_NORMALIZADAS
-        )
+        texto_unidade = (texto_unidade + " " + valores).str.strip()
+
+    mascara = pd.Series(False, index=df.index, dtype=bool)
+    for termos in REGRAS_UNIDADES_IGNORADAS_CAIS:
+        corresponde = pd.Series(True, index=df.index, dtype=bool)
+        for termo in termos:
+            corresponde = corresponde & texto_unidade.str.contains(
+                termo,
+                regex=False,
+                na=False,
+            )
+        mascara = mascara | corresponde
     return mascara
 
 
@@ -10319,11 +10351,15 @@ transferencias_layout = dbc.Container(
             dbc.CardBody(
                 [
                     html.H5(
-                        "Convenentes/OSCs por valor global",
+                        "Convenentes/OSCs: valor global e desembolsado",
                         className="fw-bold mb-1",
                     ),
                     html.P(
-                        "Os 15 maiores valores do recorte selecionado.",
+                        (
+                            "Os 15 maiores valores do recorte selecionado. "
+                            "Azul representa o valor global e verde o valor "
+                            "já desembolsado."
+                        ),
                         className="text-muted mb-3",
                     ),
                     dcc.Loading(
@@ -14609,41 +14645,117 @@ def criar_grafico_convenentes_transferencias(base, limite=15):
         .sort_values("Valor Global", ascending=True)
     )
     resumo["Valor global em milhões"] = resumo["Valor Global"] / 1_000_000
-    resumo["Texto"] = resumo["Valor Global"].map(formatar_moeda_brl)
-    figura = px.bar(
-        resumo,
-        x="Valor global em milhões",
-        y="Convenente / OSC",
-        orientation="h",
-        text="Texto",
-        template="plotly_white",
-        color_discrete_sequence=["#1351B4"],
-        hover_data={
-            "Valor Global": False,
-            "Valor Desembolsado": ":,.2f",
-            "Valor a Desembolsar": ":,.2f",
-            "Valor global em milhões": False,
-            "Texto": False,
-        },
+    resumo["Valor desembolsado em milhões"] = (
+        resumo["Valor Desembolsado"] / 1_000_000
     )
-    figura.update_traces(
-        textposition="outside",
-        cliponaxis=False,
-        hovertemplate=(
-            "<b>%{y}</b><br>Valor global: R$ %{x:.2f} milhões"
-            "<extra></extra>"
+    resumo["Percentual desembolsado"] = (
+        resumo["Valor Desembolsado"]
+        .div(resumo["Valor Global"].where(resumo["Valor Global"] != 0))
+        .fillna(0.0)
+        .clip(lower=0.0)
+    )
+    resumo["Texto global"] = resumo["Valor Global"].map(formatar_moeda_brl)
+
+    def moeda_curta(valor):
+        valor = float(valor or 0)
+        if abs(valor) >= 1_000_000:
+            texto = f"R$ {valor / 1_000_000:.2f} mi"
+        elif abs(valor) >= 1_000:
+            texto = f"R$ {valor / 1_000:.0f} mil"
+        else:
+            return formatar_moeda_brl(valor)
+        return texto.replace(".", ",")
+
+    resumo["Texto desembolsado"] = resumo.apply(
+        lambda linha: (
+            f"{moeda_curta(linha['Valor Desembolsado'])} · "
+            f"{formatar_percentual_brl(linha['Percentual desembolsado'])}"
         ),
+        axis=1,
+    )
+    resumo["Hover global"] = resumo["Valor Global"].map(formatar_moeda_brl)
+    resumo["Hover desembolsado"] = resumo["Valor Desembolsado"].map(
+        formatar_moeda_brl
+    )
+    resumo["Hover restante"] = resumo["Valor a Desembolsar"].map(
+        formatar_moeda_brl
+    )
+    resumo["Hover percentual"] = resumo["Percentual desembolsado"].map(
+        formatar_percentual_brl
+    )
+    dados_hover = resumo[
+        [
+            "Hover global",
+            "Hover desembolsado",
+            "Hover restante",
+            "Hover percentual",
+        ]
+    ].to_numpy()
+    hover_completo = (
+        "<b>%{y}</b><br>"
+        "Valor global: %{customdata[0]}<br>"
+        "Já desembolsado: %{customdata[1]}<br>"
+        "A desembolsar: %{customdata[2]}<br>"
+        "Percentual repassado: %{customdata[3]}"
+        "<extra></extra>"
+    )
+
+    figura = go.Figure()
+    figura.add_trace(
+        go.Bar(
+            name="Valor global",
+            x=resumo["Valor global em milhões"],
+            y=resumo["Convenente / OSC"],
+            orientation="h",
+            width=0.72,
+            marker={"color": "#1351B4", "line": {"width": 0}},
+            opacity=0.34,
+            text=resumo["Texto global"],
+            textposition="outside",
+            textfont={"color": "#071D41", "size": 10},
+            cliponaxis=False,
+            customdata=dados_hover,
+            hovertemplate=hover_completo,
+        )
+    )
+    figura.add_trace(
+        go.Bar(
+            name="Já desembolsado / repassado",
+            x=resumo["Valor desembolsado em milhões"],
+            y=resumo["Convenente / OSC"],
+            orientation="h",
+            width=0.38,
+            marker={"color": "#168821", "line": {"width": 0}},
+            text=resumo["Texto desembolsado"],
+            textposition="auto",
+            textfont={"size": 10},
+            cliponaxis=False,
+            customdata=dados_hover,
+            hovertemplate=hover_completo,
+        )
     )
     figura.update_layout(
+        template="plotly_white",
         autosize=True,
-        xaxis_title="Valor global (R$ milhões)",
+        barmode="overlay",
+        bargap=0.22,
+        xaxis_title="Valores (R$ milhões)",
         yaxis_title=None,
-        margin={"l": 25, "r": 130, "t": 15, "b": 45},
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.01,
+            "xanchor": "left",
+            "x": 0,
+        },
+        legend_title_text="",
+        margin={"l": 25, "r": 175, "t": 55, "b": 45},
         height=max(520, 90 + len(resumo) * 42),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
     )
     figura.update_yaxes(automargin=True)
+    figura.update_xaxes(rangemode="tozero")
     return figura
 
 
