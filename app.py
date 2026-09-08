@@ -10350,28 +10350,96 @@ transferencias_layout = dbc.Container(
         dbc.Card(
             dbc.CardBody(
                 [
-                    html.H5(
-                        "Convenentes/OSCs: valor global e desembolsado",
-                        className="fw-bold mb-1",
-                    ),
-                    html.P(
-                        (
-                            "Os 15 maiores valores do recorte selecionado. "
-                            "Azul representa o valor global e verde o valor "
-                            "já desembolsado."
-                        ),
-                        className="text-muted mb-3",
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    html.H5(
+                                        (
+                                            "Convenentes/OSCs: valor global "
+                                            "e desembolsado"
+                                        ),
+                                        className="fw-bold mb-1",
+                                    ),
+                                    html.P(
+                                        (
+                                            "A barra azul representa o total "
+                                            "da parceria e a verde mostra o "
+                                            "quanto já foi repassado."
+                                        ),
+                                        className="text-muted mb-0",
+                                    ),
+                                ],
+                                xs=12,
+                                lg=7,
+                            ),
+                            dbc.Col(
+                                [
+                                    dbc.Label(
+                                        "Modo de visualização",
+                                        className="small fw-semibold mb-2",
+                                    ),
+                                    dbc.RadioItems(
+                                        id=(
+                                            "modo-grafico-convenentes-"
+                                            "transferencias"
+                                        ),
+                                        options=[
+                                            {
+                                                "label": " Valores em R$",
+                                                "value": "valores",
+                                            },
+                                            {
+                                                "label": " Execução em %",
+                                                "value": "percentual",
+                                            },
+                                        ],
+                                        value="valores",
+                                        inline=True,
+                                        inputClassName="btn-check",
+                                        labelClassName=(
+                                            "btn btn-sm btn-outline-primary"
+                                        ),
+                                        labelCheckedClassName="active",
+                                        className=(
+                                            "d-flex flex-wrap gap-2 "
+                                            "justify-content-lg-end"
+                                        ),
+                                    ),
+                                ],
+                                xs=12,
+                                lg=5,
+                                className="mt-3 mt-lg-0",
+                            ),
+                        ],
+                        align="end",
+                        className="g-3 mb-3",
                     ),
                     dcc.Loading(
                         dcc.Graph(
                             id="grafico-convenentes-transferencias",
                             responsive=True,
+                            animate=True,
+                            animation_options={
+                                "frame": {
+                                    "duration": 650,
+                                    "redraw": False,
+                                },
+                                "transition": {
+                                    "duration": 500,
+                                    "easing": "cubic-in-out",
+                                },
+                            },
                             config={
                                 "responsive": True,
                                 "displaylogo": False,
-                                "displayModeBar": False,
+                                "displayModeBar": "hover",
+                                "modeBarButtonsToRemove": [
+                                    "lasso2d",
+                                    "select2d",
+                                ],
                             },
-                            style={"minHeight": "520px"},
+                            style={"minHeight": "720px"},
                         )
                     ),
                 ],
@@ -14633,9 +14701,14 @@ def criar_grafico_status_transferencias(base):
     return figura
 
 
-def criar_grafico_convenentes_transferencias(base, limite=15):
+def criar_grafico_convenentes_transferencias(
+    base,
+    limite=15,
+    modo="valores",
+):
     if base.empty:
         return figura_vazia("Nenhuma transferência corresponde aos filtros.")
+    modo = "percentual" if modo == "percentual" else "valores"
     resumo = (
         base.groupby("Convenente / OSC", as_index=False)[
             ["Valor Global", "Valor Desembolsado", "Valor a Desembolsar"]
@@ -14654,7 +14727,9 @@ def criar_grafico_convenentes_transferencias(base, limite=15):
         .fillna(0.0)
         .clip(lower=0.0)
     )
-    resumo["Texto global"] = resumo["Valor Global"].map(formatar_moeda_brl)
+    resumo["Percentual visual"] = resumo[
+        "Percentual desembolsado"
+    ].clip(lower=0.0, upper=1.0)
 
     def moeda_curta(valor):
         valor = float(valor or 0)
@@ -14666,6 +14741,7 @@ def criar_grafico_convenentes_transferencias(base, limite=15):
             return formatar_moeda_brl(valor)
         return texto.replace(".", ",")
 
+    resumo["Texto global"] = resumo["Valor Global"].map(moeda_curta)
     resumo["Texto desembolsado"] = resumo.apply(
         lambda linha: (
             f"{moeda_curta(linha['Valor Desembolsado'])} · "
@@ -14700,19 +14776,58 @@ def criar_grafico_convenentes_transferencias(base, limite=15):
         "<extra></extra>"
     )
 
+    if modo == "percentual":
+        eixo_total = [100.0] * len(resumo)
+        eixo_repassado = resumo["Percentual visual"] * 100
+        texto_total = resumo["Texto global"].map(
+            lambda valor: f"Global: {valor}"
+        )
+        texto_repassado = resumo.apply(
+            lambda linha: (
+                "Sem repasse"
+                if linha["Valor Desembolsado"] == 0
+                else (
+                    f"{formatar_percentual_brl(linha['Percentual desembolsado'])}"
+                    f" · {moeda_curta(linha['Valor Desembolsado'])}"
+                )
+            ),
+            axis=1,
+        )
+        nome_total = "Total da parceria (100%)"
+        titulo_eixo = "Execução financeira"
+        configuracao_eixo = {
+            "range": [0, 116],
+            "ticksuffix": "%",
+            "dtick": 20,
+        }
+    else:
+        eixo_total = resumo["Valor global em milhões"]
+        eixo_repassado = resumo["Valor desembolsado em milhões"]
+        texto_total = resumo["Texto global"]
+        texto_repassado = resumo["Texto desembolsado"]
+        nome_total = "Valor global"
+        titulo_eixo = "Valores (R$ milhões)"
+        configuracao_eixo = {"rangemode": "tozero"}
+
     figura = go.Figure()
     figura.add_trace(
         go.Bar(
-            name="Valor global",
-            x=resumo["Valor global em milhões"],
+            name=nome_total,
+            x=eixo_total,
             y=resumo["Convenente / OSC"],
             orientation="h",
-            width=0.72,
-            marker={"color": "#1351B4", "line": {"width": 0}},
-            opacity=0.34,
-            text=resumo["Texto global"],
+            width=0.86,
+            marker={
+                "color": "#D6E7FF",
+                "line": {"color": "#1351B4", "width": 1.2},
+            },
+            text=texto_total,
             textposition="outside",
-            textfont={"color": "#071D41", "size": 10},
+            textfont={
+                "color": "#071D41",
+                "size": 12,
+                "family": "Arial, sans-serif",
+            },
             cliponaxis=False,
             customdata=dados_hover,
             hovertemplate=hover_completo,
@@ -14721,14 +14836,20 @@ def criar_grafico_convenentes_transferencias(base, limite=15):
     figura.add_trace(
         go.Bar(
             name="Já desembolsado / repassado",
-            x=resumo["Valor desembolsado em milhões"],
+            x=eixo_repassado,
             y=resumo["Convenente / OSC"],
             orientation="h",
-            width=0.38,
-            marker={"color": "#168821", "line": {"width": 0}},
-            text=resumo["Texto desembolsado"],
+            width=0.58,
+            marker={
+                "color": "#168821",
+                "line": {"color": "#0B6415", "width": 0.8},
+            },
+            text=texto_repassado,
             textposition="auto",
-            textfont={"size": 10},
+            textfont={
+                "size": 12,
+                "family": "Arial, sans-serif",
+            },
             cliponaxis=False,
             customdata=dados_hover,
             hovertemplate=hover_completo,
@@ -14738,24 +14859,46 @@ def criar_grafico_convenentes_transferencias(base, limite=15):
         template="plotly_white",
         autosize=True,
         barmode="overlay",
-        bargap=0.22,
-        xaxis_title="Valores (R$ milhões)",
+        bargap=0.16,
+        xaxis_title=titulo_eixo,
         yaxis_title=None,
+        hovermode="closest",
+        transition={"duration": 500, "easing": "cubic-in-out"},
+        uirevision=f"grafico-transferencias-{modo}",
         legend={
             "orientation": "h",
             "yanchor": "bottom",
             "y": 1.01,
             "xanchor": "left",
             "x": 0,
+            "font": {"size": 12},
         },
         legend_title_text="",
-        margin={"l": 25, "r": 175, "t": 55, "b": 45},
-        height=max(520, 90 + len(resumo) * 42),
+        margin={"l": 35, "r": 190, "t": 65, "b": 55},
+        height=max(720, 150 + len(resumo) * 46),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
+        font={"family": "Arial, sans-serif", "color": "#071D41"},
+        hoverlabel={
+            "bgcolor": "#FFFFFF",
+            "bordercolor": "#1351B4",
+            "font": {"color": "#071D41", "size": 12},
+        },
     )
-    figura.update_yaxes(automargin=True)
-    figura.update_xaxes(rangemode="tozero")
+    figura.update_yaxes(
+        automargin=True,
+        tickfont={"size": 12, "color": "#071D41"},
+        fixedrange=False,
+    )
+    figura.update_xaxes(
+        showgrid=True,
+        gridcolor="#E3EAF3",
+        zeroline=True,
+        zerolinecolor="#A7B7CC",
+        tickfont={"size": 11},
+        fixedrange=False,
+        **configuracao_eixo,
+    )
     return figura
 
 
@@ -14942,6 +15085,7 @@ def limpar_filtros_transferencias(n_clicks):
         Input("filtro-tema-transferencias", "value"),
         Input("filtro-responsavel-transferencias", "value"),
         Input("filtro-convenente-transferencias", "value"),
+        Input("modo-grafico-convenentes-transferencias", "value"),
     ],
 )
 def atualizar_dashboard_transferencias(
@@ -14952,6 +15096,7 @@ def atualizar_dashboard_transferencias(
     tema,
     responsavel,
     convenente,
+    modo_grafico,
 ):
     if dados_transferencias:
         base = pd.read_json(io.StringIO(dados_transferencias), orient="split")
@@ -15057,7 +15202,10 @@ def atualizar_dashboard_transferencias(
         resumo,
         criar_grafico_regiao_transferencias(filtrada),
         criar_grafico_status_transferencias(filtrada),
-        criar_grafico_convenentes_transferencias(filtrada),
+        criar_grafico_convenentes_transferencias(
+            filtrada,
+            modo=modo_grafico,
+        ),
         tabela[colunas_tabela].fillna("").to_dict("records"),
     )
 
