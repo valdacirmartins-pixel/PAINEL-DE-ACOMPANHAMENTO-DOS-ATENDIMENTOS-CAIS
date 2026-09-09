@@ -10852,16 +10852,18 @@ transferencias_layout = dbc.Container(
                                 [
                                     html.H5(
                                         (
-                                            "Convenentes/OSCs: execução "
-                                            "financeira"
+                                            "Progresso dos repasses por "
+                                            "convenente/OSC"
                                         ),
                                         className="fw-bold mb-1",
                                     ),
                                     html.P(
                                         (
-                                            "Azul representa o valor global, "
-                                            "verde o que já foi repassado e "
-                                            "vermelho o saldo a desembolsar."
+                                            "A barra azul representa o valor "
+                                            "global e o preenchimento verde "
+                                            "mostra o quanto já foi pago. "
+                                            "Passe o cursor para consultar "
+                                            "todos os valores."
                                         ),
                                         className="text-muted mb-0",
                                     ),
@@ -10890,7 +10892,7 @@ transferencias_layout = dbc.Container(
                                                 "value": "percentual",
                                             },
                                         ],
-                                        value="valores",
+                                        value="percentual",
                                         inline=True,
                                         inputClassName="btn-check",
                                         labelClassName=(
@@ -15313,18 +15315,6 @@ def criar_grafico_convenentes_transferencias(
     resumo["Percentual visual"] = resumo[
         "Percentual desembolsado"
     ].clip(lower=0.0, upper=1.0)
-    resumo["Valor restante visual"] = resumo[
-        "Valor a Desembolsar"
-    ].clip(lower=0.0)
-    resumo["Valor restante em milhões"] = (
-        resumo["Valor restante visual"] / 1_000_000
-    )
-    resumo["Percentual restante visual"] = (
-        resumo["Valor restante visual"]
-        .div(resumo["Valor Global"].where(resumo["Valor Global"] != 0))
-        .fillna(0.0)
-        .clip(lower=0.0, upper=1.0)
-    )
 
     def moeda_curta(valor):
         valor = float(valor or 0)
@@ -15343,9 +15333,6 @@ def criar_grafico_convenentes_transferencias(
             f"{formatar_percentual_brl(linha['Percentual desembolsado'])}"
         ),
         axis=1,
-    )
-    resumo["Texto restante"] = resumo["Valor restante visual"].map(
-        moeda_curta
     )
     resumo["Hover global"] = resumo["Valor Global"].map(formatar_moeda_brl)
     resumo["Hover desembolsado"] = resumo["Valor Desembolsado"].map(
@@ -15377,49 +15364,35 @@ def criar_grafico_convenentes_transferencias(
     if modo == "percentual":
         eixo_total = [100.0] * len(resumo)
         eixo_repassado = resumo["Percentual visual"] * 100
-        eixo_restante = resumo["Percentual restante visual"] * 100
-        base_restante = eixo_repassado
         texto_total = resumo["Texto global"].map(
-            lambda valor: f"Global: {valor}"
+            lambda valor: f"Total: {valor}"
         )
         texto_repassado = resumo.apply(
             lambda linha: (
                 "Sem repasse"
                 if linha["Valor Desembolsado"] == 0
                 else (
-                    f"{formatar_percentual_brl(linha['Percentual desembolsado'])}"
+                    f"{formatar_percentual_brl(linha['Percentual desembolsado'])} pago"
                     f" · {moeda_curta(linha['Valor Desembolsado'])}"
                 )
             ),
             axis=1,
         )
-        texto_restante = resumo.apply(
-            lambda linha: (
-                "Quitado"
-                if linha["Valor restante visual"] == 0
-                else (
-                    f"{formatar_percentual_brl(linha['Percentual restante visual'])}"
-                    " restante"
-                )
-            ),
-            axis=1,
-        )
-        nome_total = "Total da parceria (100%)"
-        titulo_eixo = "Execução financeira"
+        nome_total = "Valor global (100%)"
+        titulo_eixo = "Percentual já pago"
         configuracao_eixo = {
-            "range": [0, 116],
+            "range": [0, 118],
             "ticksuffix": "%",
             "dtick": 20,
         }
     else:
         eixo_total = resumo["Valor global em milhões"]
         eixo_repassado = resumo["Valor desembolsado em milhões"]
-        eixo_restante = resumo["Valor restante em milhões"]
-        base_restante = eixo_repassado
-        texto_total = resumo["Texto global"]
+        texto_total = resumo["Texto global"].map(
+            lambda valor: f"Total: {valor}"
+        )
         texto_repassado = resumo["Texto desembolsado"]
-        texto_restante = resumo["Texto restante"]
-        nome_total = "Valor global"
+        nome_total = "Valor global / total"
         titulo_eixo = "Valores (R$ milhões)"
         configuracao_eixo = {"rangemode": "tozero"}
 
@@ -15430,10 +15403,10 @@ def criar_grafico_convenentes_transferencias(
             x=eixo_total,
             y=resumo["Convenente / OSC"],
             orientation="h",
-            width=0.96,
+            width=0.72,
             marker={
-                "color": "#D6E7FF",
-                "line": {"color": COR_CIDADANIA_AZUL, "width": 1.2},
+                "color": COR_CIDADANIA_AZUL_CLARO,
+                "line": {"color": COR_CIDADANIA_AZUL, "width": 1.4},
             },
             text=texto_total,
             textposition="outside",
@@ -15453,39 +15426,14 @@ def criar_grafico_convenentes_transferencias(
             x=eixo_repassado,
             y=resumo["Convenente / OSC"],
             orientation="h",
-            width=0.74,
+            width=0.72,
             marker={
                 "color": COR_CIDADANIA_VERDE,
                 "line": {"color": COR_CIDADANIA_VERDE_ESCURO, "width": 0.8},
             },
             text=texto_repassado,
             textposition="auto",
-            textfont={
-                "size": 15,
-                "family": "Arial, sans-serif",
-            },
-            cliponaxis=False,
-            customdata=dados_hover,
-            hovertemplate=hover_completo,
-        )
-    )
-    figura.add_trace(
-        go.Bar(
-            name="A desembolsar",
-            x=eixo_restante,
-            base=base_restante,
-            y=resumo["Convenente / OSC"],
-            orientation="h",
-            width=0.74,
-            marker={
-                "color": COR_CIDADANIA_VERMELHO,
-                "line": {
-                    "color": COR_CIDADANIA_VERMELHO_ESCURO,
-                    "width": 0.8,
-                },
-            },
-            text=texto_restante,
-            textposition="auto",
+            insidetextanchor="middle",
             textfont={
                 "size": 15,
                 "family": "Arial, sans-serif",
@@ -15499,11 +15447,12 @@ def criar_grafico_convenentes_transferencias(
         template="plotly_white",
         autosize=True,
         barmode="overlay",
-        bargap=0.10,
+        barcornerradius=14,
+        bargap=0.18,
         xaxis_title=titulo_eixo,
         yaxis_title=None,
         hovermode="closest",
-        transition={"duration": 500, "easing": "cubic-in-out"},
+        transition={"duration": 650, "easing": "cubic-in-out"},
         uirevision=f"grafico-transferencias-{modo}",
         legend={
             "orientation": "h",
@@ -15511,10 +15460,10 @@ def criar_grafico_convenentes_transferencias(
             "y": 1.01,
             "xanchor": "left",
             "x": 0,
-            "font": {"size": 15},
+            "font": {"size": 16},
         },
         legend_title_text="",
-        margin={"l": 45, "r": 250, "t": 75, "b": 70},
+        margin={"l": 50, "r": 275, "t": 85, "b": 75},
         height=max(1050, 180 + len(resumo) * 58),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -15527,7 +15476,7 @@ def criar_grafico_convenentes_transferencias(
     )
     figura.update_yaxes(
         automargin=True,
-        tickfont={"size": 15, "color": "#071D41"},
+        tickfont={"size": 16, "color": "#071D41"},
         fixedrange=False,
     )
     figura.update_xaxes(
