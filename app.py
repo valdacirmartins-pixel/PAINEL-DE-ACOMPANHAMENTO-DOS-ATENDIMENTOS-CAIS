@@ -44,7 +44,11 @@ PASTA_DATA = os.path.join(PASTA_BASE, "data")
 PASTA_UPLOADS = os.path.join(PASTA_BASE, "uploads")
 PASTA_OUTPUTS = os.path.join(PASTA_BASE, "outputs")
 PASTA_HISTORICO = os.path.join(PASTA_DATA, "historico_importacoes")
-PASTA_CARROSSEL_INICIO = os.path.join(PASTA_DATA, "carrossel_inicio")
+PASTA_VOLUME_RAILWAY = os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+PASTA_CARROSSEL_INICIO = os.path.join(
+    PASTA_VOLUME_RAILWAY or PASTA_DATA,
+    "carrossel_inicio",
+)
 CAMINHO_BANCO = os.path.join(PASTA_DATA, "monitoramento_cidadania.sqlite3")
 CAMINHO_BASE_UNIDADES_MAPA = os.path.join(PASTA_DATA, "unidades_cais_mapa.json")
 CAMINHO_BASE_TRANSFERENCIAS = os.path.join(
@@ -821,33 +825,101 @@ app.index_string = """
         {%css%}
         <style>
             .somente-impressao { display: none; }
+            .galeria-inicio-card {
+                background: linear-gradient(145deg, #ffffff 0%, #f5f8fc 100%);
+                border: 1px solid rgba(19, 81, 180, 0.08) !important;
+            }
+            .moldura-carrossel-inicio {
+                padding: 7px;
+                border-radius: 24px;
+                background: linear-gradient(135deg, #071d41, #1351b4 62%, #168821);
+                box-shadow: 0 18px 38px rgba(7, 29, 65, 0.18);
+            }
             .carrossel-inicio {
                 overflow: hidden;
                 border-radius: 18px;
-                background: #071d41;
-                box-shadow: 0 12px 28px rgba(7, 29, 65, 0.15);
+                background: radial-gradient(circle at center, #17477f 0%, #071d41 72%);
+                box-shadow: inset 0 0 45px rgba(0, 0, 0, 0.25);
             }
             .carrossel-inicio .carousel-item {
-                transition: transform 0.85s ease-in-out;
+                transition: transform 0.9s cubic-bezier(0.45, 0, 0.25, 1);
             }
             .carrossel-inicio-imagem {
                 display: block;
                 width: 100%;
-                height: clamp(300px, 42vw, 520px);
-                object-fit: cover;
+                height: clamp(360px, 44vw, 580px);
+                object-fit: contain;
                 object-position: center;
+                background: radial-gradient(circle at center, #17477f 0%, #071d41 72%);
             }
             .carrossel-inicio .carousel-control-prev,
             .carrossel-inicio .carousel-control-next {
-                width: 9%;
-                opacity: 0.85;
+                width: 8%;
+                min-width: 58px;
+                opacity: 0.95;
+            }
+            .carrossel-inicio .carousel-control-prev-icon,
+            .carrossel-inicio .carousel-control-next-icon {
+                width: 48px;
+                height: 48px;
+                border-radius: 50%;
+                border: 1px solid rgba(255, 255, 255, 0.55);
+                background-color: rgba(7, 29, 65, 0.78);
+                background-size: 42%;
+                box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+                transition: transform 0.2s ease, background-color 0.2s ease;
+            }
+            .carrossel-inicio .carousel-control-prev:hover .carousel-control-prev-icon,
+            .carrossel-inicio .carousel-control-next:hover .carousel-control-next-icon {
+                transform: scale(1.08);
+                background-color: rgba(19, 81, 180, 0.95);
             }
             .carrossel-inicio .carousel-indicators {
-                margin-bottom: 0.8rem;
+                margin-bottom: 1rem;
+                gap: 5px;
+            }
+            .carrossel-inicio .carousel-indicators [data-bs-target] {
+                width: 10px;
+                height: 10px;
+                margin: 0;
+                border: 2px solid rgba(255, 255, 255, 0.85);
+                border-radius: 50%;
+                background-color: #ffffff;
+                opacity: 0.5;
+                transition: width 0.25s ease, opacity 0.25s ease;
+            }
+            .carrossel-inicio .carousel-indicators .active {
+                width: 30px;
+                border-radius: 8px;
+                opacity: 1;
+            }
+            .contador-carrossel-inicio {
+                position: absolute;
+                top: 16px;
+                right: 16px;
+                z-index: 3;
+                padding: 7px 12px;
+                border: 1px solid rgba(255, 255, 255, 0.6);
+                border-radius: 999px;
+                color: #ffffff;
+                background: rgba(7, 29, 65, 0.72);
+                box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+                backdrop-filter: blur(8px);
+                font-size: 0.82rem;
+                font-weight: 600;
             }
             @media (max-width: 576px) {
                 .carrossel-inicio-imagem {
-                    height: 280px;
+                    height: 340px;
+                }
+                .carrossel-inicio .carousel-control-prev,
+                .carrossel-inicio .carousel-control-next {
+                    min-width: 46px;
+                }
+                .carrossel-inicio .carousel-control-prev-icon,
+                .carrossel-inicio .carousel-control-next-icon {
+                    width: 40px;
+                    height: 40px;
                 }
             }
             body.modo-impressao .relatorio-impressao {
@@ -1259,14 +1331,26 @@ def criar_area_carrossel_inicio():
             },
         )
 
-    return dbc.Carousel(
-        items=itens,
-        active_index=0,
-        interval=5500 if len(itens) > 1 else None,
-        controls=len(itens) > 1,
-        indicators=len(itens) > 1,
-        slide=True,
-        class_name="carrossel-inicio",
+    return html.Div(
+        [
+            dbc.Carousel(
+                items=itens,
+                active_index=0,
+                interval=5500 if len(itens) > 1 else None,
+                controls=len(itens) > 1,
+                indicators=len(itens) > 1,
+                slide=True,
+                class_name="carrossel-inicio",
+            ),
+            html.Div(
+                [
+                    html.I(className="fa-regular fa-images me-2"),
+                    f"{len(itens)} foto(s)",
+                ],
+                className="contador-carrossel-inicio",
+            ),
+        ],
+        className="position-relative",
     )
 
 
@@ -6867,7 +6951,7 @@ home_layout = dbc.Container(
                                             "Adicionar fotos",
                                         ],
                                         color="primary",
-                                        className="w-100 w-lg-auto",
+                                        className="w-100 rounded-pill px-4 py-2",
                                     ),
                                     accept=(
                                         "image/jpeg,image/png,image/webp,"
@@ -6884,9 +6968,16 @@ home_layout = dbc.Container(
                         align="center",
                         className="g-3 mb-3",
                     ),
+                    dcc.Interval(
+                        id="inicializar-carrossel-inicio",
+                        interval=350,
+                        n_intervals=0,
+                        max_intervals=1,
+                    ),
                     html.Div(
                         criar_area_carrossel_inicio(),
                         id="area-carrossel-inicio",
+                        className="moldura-carrossel-inicio",
                     ),
                     html.Div(
                         id="mensagem-upload-fotos-inicio",
@@ -6902,7 +6993,9 @@ home_layout = dbc.Container(
                 ],
                 className="p-4",
             ),
-            className="shadow-sm border-0 rounded-4 mb-4",
+            className=(
+                "galeria-inicio-card shadow-sm border-0 rounded-4 mb-4"
+            ),
         ),
 
         dbc.Alert(
@@ -11586,13 +11679,15 @@ def processar_upload_home(
         Output("area-carrossel-inicio", "children"),
         Output("mensagem-upload-fotos-inicio", "children"),
     ],
-    Input("upload-fotos-carrossel-inicio", "contents"),
+    [
+        Input("upload-fotos-carrossel-inicio", "contents"),
+        Input("inicializar-carrossel-inicio", "n_intervals"),
+    ],
     State("upload-fotos-carrossel-inicio", "filename"),
-    prevent_initial_call=True,
 )
-def processar_fotos_carrossel_inicio(conteudos, nomes):
-    if not conteudos:
-        return no_update, no_update
+def processar_fotos_carrossel_inicio(conteudos, _n_intervalos, nomes):
+    if ctx.triggered_id != "upload-fotos-carrossel-inicio" or not conteudos:
+        return criar_area_carrossel_inicio(), no_update
 
     salvas, ignoradas = salvar_fotos_carrossel(conteudos, nomes)
     partes_mensagem = []
