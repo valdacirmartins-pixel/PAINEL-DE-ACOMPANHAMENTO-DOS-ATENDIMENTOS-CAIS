@@ -19,7 +19,7 @@ import plotly.graph_objects as go
 from dash import Dash, html, dcc, dash_table, no_update, ctx
 from dash.dependencies import Input, Output, State
 import dash_bootstrap_components as dbc
-from flask import session
+from flask import session, send_from_directory, abort
 
 
 # ============================================================
@@ -44,6 +44,7 @@ PASTA_DATA = os.path.join(PASTA_BASE, "data")
 PASTA_UPLOADS = os.path.join(PASTA_BASE, "uploads")
 PASTA_OUTPUTS = os.path.join(PASTA_BASE, "outputs")
 PASTA_HISTORICO = os.path.join(PASTA_DATA, "historico_importacoes")
+PASTA_CARROSSEL_INICIO = os.path.join(PASTA_DATA, "carrossel_inicio")
 CAMINHO_BANCO = os.path.join(PASTA_DATA, "monitoramento_cidadania.sqlite3")
 CAMINHO_BASE_UNIDADES_MAPA = os.path.join(PASTA_DATA, "unidades_cais_mapa.json")
 CAMINHO_BASE_TRANSFERENCIAS = os.path.join(
@@ -791,6 +792,7 @@ for pasta in [
     PASTA_UPLOADS,
     PASTA_OUTPUTS,
     PASTA_HISTORICO,
+    PASTA_CARROSSEL_INICIO,
 ]:
     os.makedirs(pasta, exist_ok=True)
 
@@ -819,6 +821,35 @@ app.index_string = """
         {%css%}
         <style>
             .somente-impressao { display: none; }
+            .carrossel-inicio {
+                overflow: hidden;
+                border-radius: 18px;
+                background: #071d41;
+                box-shadow: 0 12px 28px rgba(7, 29, 65, 0.15);
+            }
+            .carrossel-inicio .carousel-item {
+                transition: transform 0.85s ease-in-out;
+            }
+            .carrossel-inicio-imagem {
+                display: block;
+                width: 100%;
+                height: clamp(300px, 42vw, 520px);
+                object-fit: cover;
+                object-position: center;
+            }
+            .carrossel-inicio .carousel-control-prev,
+            .carrossel-inicio .carousel-control-next {
+                width: 9%;
+                opacity: 0.85;
+            }
+            .carrossel-inicio .carousel-indicators {
+                margin-bottom: 0.8rem;
+            }
+            @media (max-width: 576px) {
+                .carrossel-inicio-imagem {
+                    height: 280px;
+                }
+            }
             body.modo-impressao .relatorio-impressao {
                 width: 283mm !important;
                 max-width: 283mm !important;
@@ -1080,6 +1111,17 @@ if not _chave_sessao:
 server.secret_key = _chave_sessao
 
 
+@server.route("/fotos-carrossel-inicio/<path:nome_arquivo>")
+def servir_foto_carrossel_inicio(nome_arquivo):
+    if not session.get("autenticado"):
+        abort(403)
+    return send_from_directory(
+        PASTA_CARROSSEL_INICIO,
+        nome_arquivo,
+        max_age=3600,
+    )
+
+
 # ============================================================
 # ARMAZENAMENTO LOCAL / HISTÓRICO DE IMPORTAÇÕES
 # ============================================================
@@ -1134,6 +1176,140 @@ def bytes_upload(conteudo_upload):
         return b""
     _, conteudo = conteudo_upload.split(",", 1)
     return base64.b64decode(conteudo)
+
+
+EXTENSOES_CARROSSEL = {".jpg", ".jpeg", ".png", ".webp"}
+LIMITE_FOTOS_CARROSSEL = 20
+LIMITE_BYTES_FOTO = 8 * 1024 * 1024
+
+
+def detectar_extensao_imagem(dados):
+    """Confere o conteúdo real da imagem, sem confiar só no nome do arquivo."""
+    if dados.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if dados.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if (
+        len(dados) >= 12
+        and dados[:4] == b"RIFF"
+        and dados[8:12] == b"WEBP"
+    ):
+        return ".webp"
+    return None
+
+
+def arquivos_carrossel_inicio():
+    if not os.path.isdir(PASTA_CARROSSEL_INICIO):
+        return []
+
+    arquivos = []
+    for nome in sorted(os.listdir(PASTA_CARROSSEL_INICIO)):
+        caminho = os.path.join(PASTA_CARROSSEL_INICIO, nome)
+        extensao = os.path.splitext(nome)[1].lower()
+        if os.path.isfile(caminho) and extensao in EXTENSOES_CARROSSEL:
+            arquivos.append((nome, caminho))
+    return arquivos[:LIMITE_FOTOS_CARROSSEL]
+
+
+def itens_carrossel_inicio():
+    itens = []
+    for indice, (nome, caminho) in enumerate(
+        arquivos_carrossel_inicio(),
+        start=1,
+    ):
+        versao = int(os.path.getmtime(caminho))
+        endereco = f"/fotos-carrossel-inicio/{nome}"
+        itens.append(
+            {
+                "key": nome,
+                "src": f"{endereco}?v={versao}",
+                "alt": f"Foto {indice} do Cidadania PopRua",
+                "img_class_name": "carrossel-inicio-imagem",
+            }
+        )
+    return itens
+
+
+def criar_area_carrossel_inicio():
+    itens = itens_carrossel_inicio()
+    if not itens:
+        return html.Div(
+            [
+                html.I(
+                    className="fa-regular fa-images fa-3x mb-3",
+                    style={"color": "#B9CBE3"},
+                ),
+                html.H5(
+                    "Galeria aguardando fotos",
+                    className="fw-bold mb-2",
+                ),
+                html.P(
+                    "Use o botão Adicionar fotos para iniciar a apresentação.",
+                    className="text-muted mb-0",
+                ),
+            ],
+            className=(
+                "d-flex flex-column align-items-center "
+                "justify-content-center text-center rounded-4"
+            ),
+            style={
+                "minHeight": "260px",
+                "background": "linear-gradient(135deg, #F3F7FC, #E6EEF8)",
+                "border": "1px dashed #9FB5CF",
+            },
+        )
+
+    return dbc.Carousel(
+        items=itens,
+        active_index=0,
+        interval=5500 if len(itens) > 1 else None,
+        controls=len(itens) > 1,
+        indicators=len(itens) > 1,
+        slide=True,
+        class_name="carrossel-inicio",
+    )
+
+
+def salvar_fotos_carrossel(conteudos, nomes):
+    conteudos = conteudos if isinstance(conteudos, list) else [conteudos]
+    nomes = nomes if isinstance(nomes, list) else [nomes]
+    quantidade_atual = len(arquivos_carrossel_inicio())
+    vagas = max(0, LIMITE_FOTOS_CARROSSEL - quantidade_atual)
+
+    salvas = []
+    ignoradas = []
+    for indice, (conteudo, nome) in enumerate(zip(conteudos, nomes), start=1):
+        if len(salvas) >= vagas:
+            ignoradas.append(
+                f"{nome}: limite de {LIMITE_FOTOS_CARROSSEL} fotos atingido"
+            )
+            continue
+
+        try:
+            dados = bytes_upload(conteudo)
+            if not dados:
+                raise ValueError("arquivo vazio")
+            if len(dados) > LIMITE_BYTES_FOTO:
+                raise ValueError("a foto ultrapassa 8 MB")
+
+            extensao = detectar_extensao_imagem(dados)
+            if extensao is None:
+                raise ValueError("formato não reconhecido; use JPG, PNG ou WEBP")
+
+            nome_base = os.path.splitext(nome_arquivo_seguro(nome))[0][:60]
+            momento = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            nome_destino = f"{momento}_{indice:02d}_{nome_base}{extensao}"
+            caminho_destino = os.path.join(
+                PASTA_CARROSSEL_INICIO,
+                nome_destino,
+            )
+            with open(caminho_destino, "wb") as arquivo:
+                arquivo.write(dados)
+            salvas.append(str(nome))
+        except Exception as erro:
+            ignoradas.append(f"{nome}: {erro}")
+
+    return salvas, ignoradas
 
 
 def registrar_importacao(tipo, nomes_arquivos, conteudos_arquivos, dataframe, pessoa=None, payload_historico=None):
@@ -6647,6 +6823,88 @@ home_layout = dbc.Container(
             className="mb-4",
         ),
 
+        dbc.Card(
+            dbc.CardBody(
+                [
+                    dbc.Row(
+                        [
+                            dbc.Col(
+                                [
+                                    html.H4(
+                                        [
+                                            html.I(
+                                                className=(
+                                                    "fa-solid fa-camera-retro "
+                                                    "me-2"
+                                                ),
+                                                style={"color": "#1351B4"},
+                                            ),
+                                            "Cidadania PopRua em ação",
+                                        ],
+                                        className="fw-bold mb-1",
+                                    ),
+                                    html.P(
+                                        (
+                                            "Registros das atividades e das "
+                                            "unidades em todo o Brasil."
+                                        ),
+                                        className="text-muted mb-0",
+                                    ),
+                                ],
+                                xs=12,
+                                lg=8,
+                            ),
+                            dbc.Col(
+                                dcc.Upload(
+                                    id="upload-fotos-carrossel-inicio",
+                                    children=dbc.Button(
+                                        [
+                                            html.I(
+                                                className=(
+                                                    "fa-solid fa-images me-2"
+                                                )
+                                            ),
+                                            "Adicionar fotos",
+                                        ],
+                                        color="primary",
+                                        className="w-100 w-lg-auto",
+                                    ),
+                                    accept=(
+                                        "image/jpeg,image/png,image/webp,"
+                                        ".jpg,.jpeg,.png,.webp"
+                                    ),
+                                    multiple=True,
+                                    style={"width": "100%"},
+                                ),
+                                xs=12,
+                                lg="auto",
+                                className="mt-3 mt-lg-0 ms-lg-auto",
+                            ),
+                        ],
+                        align="center",
+                        className="g-3 mb-3",
+                    ),
+                    html.Div(
+                        criar_area_carrossel_inicio(),
+                        id="area-carrossel-inicio",
+                    ),
+                    html.Div(
+                        id="mensagem-upload-fotos-inicio",
+                        className="mt-3",
+                    ),
+                    html.Small(
+                        (
+                            "Até 20 fotos, com no máximo 8 MB cada. "
+                            "Formatos aceitos: JPG, PNG e WEBP."
+                        ),
+                        className="text-muted d-block mt-3",
+                    ),
+                ],
+                className="p-4",
+            ),
+            className="shadow-sm border-0 rounded-4 mb-4",
+        ),
+
         dbc.Alert(
             [
                 html.Div(
@@ -9477,7 +9735,7 @@ mapa_unidades_layout = dbc.Container(
                 dbc.Col(
                     [
                         html.H1(
-                            "Mapa das Unidades CAIS",
+                            "Mapa Cidadania PopRua",
                             className="fw-bold mb-2",
                             style={"color": "#071D41"},
                         ),
@@ -11317,6 +11575,59 @@ def processar_upload_home(
             ),
             None,
         )
+
+
+# ============================================================
+# CALLBACK - FOTOS DO CARROSSEL DA PÁGINA INICIAL
+# ============================================================
+
+@app.callback(
+    [
+        Output("area-carrossel-inicio", "children"),
+        Output("mensagem-upload-fotos-inicio", "children"),
+    ],
+    Input("upload-fotos-carrossel-inicio", "contents"),
+    State("upload-fotos-carrossel-inicio", "filename"),
+    prevent_initial_call=True,
+)
+def processar_fotos_carrossel_inicio(conteudos, nomes):
+    if not conteudos:
+        return no_update, no_update
+
+    salvas, ignoradas = salvar_fotos_carrossel(conteudos, nomes)
+    partes_mensagem = []
+
+    if salvas:
+        partes_mensagem.extend(
+            [
+                html.I(className="fa-solid fa-circle-check me-2"),
+                html.Strong(
+                    f"{len(salvas)} foto(s) adicionada(s) ao carrossel."
+                ),
+            ]
+        )
+
+    if ignoradas:
+        if partes_mensagem:
+            partes_mensagem.append(html.Hr(className="my-2"))
+        partes_mensagem.extend(
+            [
+                html.Strong("Arquivo(s) não adicionados:"),
+                html.Ul(
+                    [html.Li(item) for item in ignoradas],
+                    className="mb-0 mt-1 small",
+                ),
+            ]
+        )
+
+    cor = "success" if salvas and not ignoradas else "warning"
+    if ignoradas and not salvas:
+        cor = "danger"
+
+    return (
+        criar_area_carrossel_inicio(),
+        dbc.Alert(partes_mensagem, color=cor, className="mb-0"),
+    )
 
 
 # ============================================================
