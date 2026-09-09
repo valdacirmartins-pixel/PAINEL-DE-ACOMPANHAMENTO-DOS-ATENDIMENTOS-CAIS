@@ -10440,7 +10440,11 @@ transferencias_layout = dbc.Container(
                                 ],
                             },
                             style={
-                                "minHeight": "900px",
+                                # O responsive=True usa a altura do contêiner.
+                                # height (e não só minHeight) evita o Plotly
+                                # renderizar com 450 px e deixar espaço vazio.
+                                "height": "1050px",
+                                "minHeight": "1050px",
                                 "width": "100%",
                             },
                         )
@@ -14819,7 +14823,7 @@ def criar_grafico_convenentes_transferencias(
             x=eixo_total,
             y=resumo["Convenente / OSC"],
             orientation="h",
-            width=0.94,
+            width=0.96,
             marker={
                 "color": "#D6E7FF",
                 "line": {"color": "#1351B4", "width": 1.2},
@@ -14828,7 +14832,7 @@ def criar_grafico_convenentes_transferencias(
             textposition="outside",
             textfont={
                 "color": "#071D41",
-                "size": 14,
+                "size": 15,
                 "family": "Arial, sans-serif",
             },
             cliponaxis=False,
@@ -14842,7 +14846,7 @@ def criar_grafico_convenentes_transferencias(
             x=eixo_repassado,
             y=resumo["Convenente / OSC"],
             orientation="h",
-            width=0.72,
+            width=0.74,
             marker={
                 "color": "#168821",
                 "line": {"color": "#0B6415", "width": 0.8},
@@ -14850,7 +14854,7 @@ def criar_grafico_convenentes_transferencias(
             text=texto_repassado,
             textposition="auto",
             textfont={
-                "size": 14,
+                "size": 15,
                 "family": "Arial, sans-serif",
             },
             cliponaxis=False,
@@ -14874,23 +14878,23 @@ def criar_grafico_convenentes_transferencias(
             "y": 1.01,
             "xanchor": "left",
             "x": 0,
-            "font": {"size": 14},
+            "font": {"size": 15},
         },
         legend_title_text="",
-        margin={"l": 40, "r": 220, "t": 70, "b": 65},
-        height=max(900, 180 + len(resumo) * 58),
+        margin={"l": 45, "r": 250, "t": 75, "b": 70},
+        height=max(1050, 180 + len(resumo) * 58),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font={"family": "Arial, sans-serif", "color": "#071D41"},
         hoverlabel={
             "bgcolor": "#FFFFFF",
             "bordercolor": "#1351B4",
-            "font": {"color": "#071D41", "size": 13},
+            "font": {"color": "#071D41", "size": 14},
         },
     )
     figura.update_yaxes(
         automargin=True,
-        tickfont={"size": 14, "color": "#071D41"},
+        tickfont={"size": 15, "color": "#071D41"},
         fixedrange=False,
     )
     figura.update_xaxes(
@@ -14898,7 +14902,7 @@ def criar_grafico_convenentes_transferencias(
         gridcolor="#E3EAF3",
         zeroline=True,
         zerolinecolor="#A7B7CC",
-        tickfont={"size": 12},
+        tickfont={"size": 13},
         fixedrange=False,
         **configuracao_eixo,
     )
