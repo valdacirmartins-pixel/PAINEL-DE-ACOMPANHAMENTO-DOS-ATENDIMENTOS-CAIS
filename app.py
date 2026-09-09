@@ -28,6 +28,27 @@ from flask import session, send_from_directory, abort
 
 NOME_SISTEMA = "Monitoramento Cidadania"
 
+# Identidade visual Cidadania PopRua.
+COR_CIDADANIA_AZUL = "#1351B4"
+COR_CIDADANIA_AZUL_ESCURO = "#071D41"
+COR_CIDADANIA_VERDE = "#168821"
+COR_CIDADANIA_VERDE_ESCURO = "#0B6415"
+COR_CIDADANIA_VERMELHO = "#D32F2F"
+COR_CIDADANIA_VERMELHO_ESCURO = "#8B1E18"
+COR_CIDADANIA_AZUL_CLARO = "#EAF2FF"
+COR_CIDADANIA_VERDE_CLARO = "#EAF7ED"
+COR_CIDADANIA_VERMELHO_CLARO = "#FDEEEE"
+
+PALETA_GRAFICOS_CIDADANIA = [
+    COR_CIDADANIA_AZUL,
+    COR_CIDADANIA_VERDE,
+    COR_CIDADANIA_VERMELHO,
+    "#0C326F",
+    "#2E7D32",
+    "#B3261E",
+]
+px.defaults.color_discrete_sequence = PALETA_GRAFICOS_CIDADANIA
+
 # ============================================================
 # LOGIN
 # ============================================================
@@ -832,7 +853,13 @@ app.index_string = """
             .moldura-carrossel-inicio {
                 padding: 7px;
                 border-radius: 24px;
-                background: linear-gradient(135deg, #071d41, #1351b4 62%, #168821);
+                background: linear-gradient(
+                    135deg,
+                    #071d41 0%,
+                    #1351b4 48%,
+                    #168821 76%,
+                    #d32f2f 100%
+                );
                 box-shadow: 0 18px 38px rgba(7, 29, 65, 0.18);
             }
             .carrossel-inicio {
@@ -921,6 +948,46 @@ app.index_string = """
                     width: 40px;
                     height: 40px;
                 }
+            }
+            .btn-primary {
+                background-color: #1351b4;
+                border-color: #1351b4;
+            }
+            .btn-primary:hover,
+            .btn-primary:focus {
+                background-color: #0c326f;
+                border-color: #0c326f;
+            }
+            .btn-outline-primary {
+                color: #1351b4;
+                border-color: #1351b4;
+            }
+            .btn-outline-primary:hover,
+            .btn-check:checked + .btn-outline-primary {
+                color: #ffffff;
+                background-color: #1351b4;
+                border-color: #1351b4;
+            }
+            .transferencias-cidadania h1::after {
+                content: "";
+                display: block;
+                width: 150px;
+                height: 5px;
+                margin-top: 12px;
+                border-radius: 999px;
+                background: linear-gradient(
+                    90deg,
+                    #1351b4 0 34%,
+                    #168821 34% 67%,
+                    #d32f2f 67% 100%
+                );
+            }
+            .transferencias-cidadania .card {
+                border: 1px solid rgba(19, 81, 180, 0.09) !important;
+                box-shadow: 0 8px 24px rgba(7, 29, 65, 0.08) !important;
+            }
+            .transferencias-cidadania .card:hover {
+                box-shadow: 0 12px 30px rgba(7, 29, 65, 0.12) !important;
             }
             body.modo-impressao .relatorio-impressao {
                 width: 283mm !important;
@@ -1531,7 +1598,61 @@ inicializar_banco()
 # FUNÇÕES AUXILIARES
 # ============================================================
 
+def paleta_card_cidadania(titulo):
+    chave = unicodedata.normalize("NFKD", str(titulo or ""))
+    chave = "".join(caractere for caractere in chave if not unicodedata.combining(caractere))
+    chave = chave.lower()
+
+    if any(
+        termo in chave
+        for termo in [
+            "pendenc",
+            "aguardando",
+            "rascunho",
+            "inconsist",
+            "duplic",
+            "a desembolsar",
+            "restante",
+        ]
+    ):
+        return {
+            "principal": COR_CIDADANIA_VERMELHO,
+            "fundo": COR_CIDADANIA_VERMELHO_CLARO,
+            "fundo_icone": "#FADBD9",
+            "borda": "#F2B8B5",
+            "sombra": "rgba(211, 47, 47, 0.10)",
+        }
+
+    if any(
+        termo in chave
+        for termo in [
+            "desembolsado",
+            "percentual",
+            "pessoas",
+            "unidades",
+            "convenentes",
+            "concluido",
+        ]
+    ):
+        return {
+            "principal": COR_CIDADANIA_VERDE,
+            "fundo": COR_CIDADANIA_VERDE_CLARO,
+            "fundo_icone": "#D7EEDF",
+            "borda": "#B6DEBE",
+            "sombra": "rgba(22, 136, 33, 0.10)",
+        }
+
+    return {
+        "principal": COR_CIDADANIA_AZUL,
+        "fundo": COR_CIDADANIA_AZUL_CLARO,
+        "fundo_icone": "#D6E7FF",
+        "borda": "#B8D3F5",
+        "sombra": "rgba(19, 81, 180, 0.10)",
+    }
+
+
 def criar_card(titulo, valor, icone, id_card):
+    paleta = paleta_card_cidadania(titulo)
     return dbc.Card(
         dbc.CardBody(
             [
@@ -1540,7 +1661,7 @@ def criar_card(titulo, valor, icone, id_card):
                         html.Div(
                             html.I(
                                 className=f"{icone} fa-lg",
-                                style={"color": "#1351B4"},
+                                style={"color": paleta["principal"]},
                             ),
                             className=(
                                 "d-flex align-items-center "
@@ -1550,8 +1671,8 @@ def criar_card(titulo, valor, icone, id_card):
                                 "width": "52px",
                                 "height": "52px",
                                 "minWidth": "52px",
-                                "backgroundColor": "#D6E7FF",
-                                "border": "1px solid #B8D3F5",
+                                "backgroundColor": paleta["fundo_icone"],
+                                "border": f"1px solid {paleta['borda']}",
                             },
                         ),
                         html.Div(
@@ -1578,9 +1699,10 @@ def criar_card(titulo, valor, icone, id_card):
         ),
         className="h-100 rounded-4",
         style={
-            "backgroundColor": "#EAF4FF",
-            "border": "1px solid #C5DBF5",
-            "boxShadow": "0 5px 16px rgba(19, 81, 180, 0.10)",
+            "backgroundColor": paleta["fundo"],
+            "border": f"1px solid {paleta['borda']}",
+            "borderTop": f"4px solid {paleta['principal']}",
+            "boxShadow": f"0 5px 16px {paleta['sombra']}",
         },
     )
 
@@ -2508,12 +2630,12 @@ ORDEM_REGIOES_MAPA = [
 ]
 
 CORES_REGIOES_MAPA = {
-    "Norte": "#168821",
-    "Nordeste": "#E6A700",
-    "Centro-Oeste": "#8E44AD",
-    "Sudeste": "#1351B4",
-    "Sul": "#D32F2F",
-    "Não informado": "#6C757D",
+    "Norte": COR_CIDADANIA_VERDE,
+    "Nordeste": COR_CIDADANIA_VERMELHO,
+    "Centro-Oeste": "#0C326F",
+    "Sudeste": COR_CIDADANIA_AZUL,
+    "Sul": "#2E7D32",
+    "Não informado": "#5C6F82",
 }
 
 
@@ -4103,7 +4225,7 @@ def construir_previa_dashboard_relatorio(
                     dbc.Col(
                         criar_card_dashboard_relatorio(
                             "Pessoas identificadas", metricas.get("pessoas", 0),
-                            "fa-solid fa-people-group", "#8E44AD",
+                            "fa-solid fa-people-group", COR_CIDADANIA_VERDE,
                         ),
                         xs=6, md=4, xl=2,
                         className="mb-3 col-card-relatorio",
@@ -4111,7 +4233,7 @@ def construir_previa_dashboard_relatorio(
                     dbc.Col(
                         criar_card_dashboard_relatorio(
                             "Usuários do sistema", metricas.get("usuarios", 0),
-                            "fa-solid fa-user-gear", "#E6A700",
+                            "fa-solid fa-user-gear", COR_CIDADANIA_AZUL,
                         ),
                         xs=6, md=4, xl=2,
                         className="mb-3 col-card-relatorio",
@@ -4681,7 +4803,10 @@ def gerar_pdf_dashboard_bytes(
     tabela_evolucao.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8E44AD")),
+                (
+                    "BACKGROUND", (0, 0), (-1, 0),
+                    colors.HexColor(COR_CIDADANIA_AZUL),
+                ),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
@@ -5054,8 +5179,23 @@ def gerar_pdf_dashboard_bytes(
         largura_pagina, altura_pagina = pagina
         canvas.setFillColor(colors.HexColor("#071D41"))
         canvas.rect(0, altura_pagina - 10 * mm, largura_pagina, 10 * mm, fill=1, stroke=0)
-        canvas.setFillColor(colors.HexColor("#FFCD07"))
-        canvas.rect(0, altura_pagina - 10.8 * mm, largura_pagina, 0.8 * mm, fill=1, stroke=0)
+        largura_faixa = largura_pagina / 3
+        for indice, cor_faixa in enumerate(
+            [
+                COR_CIDADANIA_AZUL,
+                COR_CIDADANIA_VERDE,
+                COR_CIDADANIA_VERMELHO,
+            ]
+        ):
+            canvas.setFillColor(colors.HexColor(cor_faixa))
+            canvas.rect(
+                indice * largura_faixa,
+                altura_pagina - 10.8 * mm,
+                largura_faixa,
+                0.8 * mm,
+                fill=1,
+                stroke=0,
+            )
         canvas.setFont("Helvetica-Bold", 8)
         canvas.setFillColor(colors.white)
         canvas.drawString(13 * mm, altura_pagina - 6.5 * mm, NOME_SISTEMA)
@@ -6609,7 +6749,7 @@ navbar = dbc.Navbar(
                                     "fa-chart-line "
                                     "me-2"
                                 ),
-                                style={"color": "#FFCD07"},
+                                style={"color": "#FFFFFF"},
                             ),
                             html.Span(NOME_SISTEMA),
                         ],
@@ -6658,11 +6798,12 @@ navbar = dbc.Navbar(
             "linear-gradient("
             "110deg, "
             "#168821 0%, "
-            "#116B37 45%, "
-            "#1351B4 100%"
+            "#116B37 26%, "
+            "#1351B4 68%, "
+            "#D32F2F 100%"
             ")"
         ),
-        "borderBottom": "5px solid #FFCD07",
+        "borderBottom": "5px solid #D32F2F",
         "boxShadow": "0 4px 14px rgba(7, 29, 65, 0.18)",
         "minHeight": "68px",
     },
@@ -10418,7 +10559,11 @@ transferencias_layout = dbc.Container(
                                             "border": "2px dashed #7AA7E0",
                                             "borderRadius": "14px",
                                             "padding": "24px 16px",
-                                            "backgroundColor": "#F6F9FE",
+                                            "background": (
+                                                "linear-gradient(135deg, "
+                                                "#EAF2FF 0%, #EAF7ED 68%, "
+                                                "#FDEEEE 100%)"
+                                            ),
                                             "cursor": "pointer",
                                         },
                                     ),
@@ -10560,7 +10705,7 @@ transferencias_layout = dbc.Container(
                             "Limpar filtros",
                         ],
                         id="botao-limpar-filtros-transferencias",
-                        color="secondary",
+                        color="danger",
                         outline=True,
                         className="mt-3",
                     ),
@@ -10707,16 +10852,16 @@ transferencias_layout = dbc.Container(
                                 [
                                     html.H5(
                                         (
-                                            "Convenentes/OSCs: valor global "
-                                            "e desembolsado"
+                                            "Convenentes/OSCs: execução "
+                                            "financeira"
                                         ),
                                         className="fw-bold mb-1",
                                     ),
                                     html.P(
                                         (
-                                            "A barra azul representa o total "
-                                            "da parceria e a verde mostra o "
-                                            "quanto já foi repassado."
+                                            "Azul representa o valor global, "
+                                            "verde o que já foi repassado e "
+                                            "vermelho o saldo a desembolsar."
                                         ),
                                         className="text-muted mb-0",
                                     ),
@@ -10885,15 +11030,35 @@ transferencias_layout = dbc.Container(
                         ],
                         style_header={
                             "fontWeight": "bold",
-                            "backgroundColor": "#D6E7FF",
-                            "color": "#071D41",
+                            "backgroundColor": "#1351B4",
+                            "color": "#FFFFFF",
                         },
                         style_data_conditional=[
                             {
+                                "if": {"column_id": "Valor Global"},
+                                "backgroundColor": "#EAF2FF",
+                                "color": "#0C326F",
+                                "fontWeight": "600",
+                            },
+                            {
+                                "if": {"column_id": "Valor Desembolsado"},
+                                "backgroundColor": "#EAF7ED",
+                                "color": "#0B6415",
+                                "fontWeight": "600",
+                            },
+                            {
+                                "if": {"column_id": "Valor a Desembolsar"},
+                                "backgroundColor": "#FDEEEE",
+                                "color": "#8B1E18",
+                                "fontWeight": "600",
+                            },
+                            {
                                 "if": {
-                                    "filter_query": "{Valor a Desembolsar} = 'R$ 0,00'"
+                                    "filter_query": "{Valor a Desembolsar} = 'R$ 0,00'",
+                                    "column_id": "Valor a Desembolsar",
                                 },
                                 "backgroundColor": "#E9F7EF",
+                                "color": "#0B6415",
                             }
                         ],
                     ),
@@ -10904,7 +11069,7 @@ transferencias_layout = dbc.Container(
         ),
     ],
     fluid=True,
-    className="px-2 px-md-4 pb-5",
+    className="transferencias-cidadania px-2 px-md-4 pb-5",
 )
 
 
@@ -15062,9 +15227,9 @@ def criar_grafico_regiao_transferencias(base):
         barmode="group",
         template="plotly_white",
         color_discrete_map={
-            "Valor Global": "#1351B4",
-            "Valor Desembolsado": "#168821",
-            "Valor a Desembolsar": "#E6A700",
+            "Valor Global": COR_CIDADANIA_AZUL,
+            "Valor Desembolsado": COR_CIDADANIA_VERDE,
+            "Valor a Desembolsar": COR_CIDADANIA_VERMELHO,
         },
         category_orders={"Região": ORDEM_REGIOES_MAPA + ["Nacional"]},
     )
@@ -15097,7 +15262,12 @@ def criar_grafico_status_transferencias(base):
         hole=0.58,
         template="plotly_white",
         color_discrete_sequence=[
-            "#168821", "#1351B4", "#E6A700", "#8E44AD", "#6C757D",
+            COR_CIDADANIA_VERDE,
+            COR_CIDADANIA_AZUL,
+            COR_CIDADANIA_VERMELHO,
+            "#0C326F",
+            "#2E7D32",
+            "#B3261E",
         ],
     )
     figura.update_traces(
@@ -15143,6 +15313,18 @@ def criar_grafico_convenentes_transferencias(
     resumo["Percentual visual"] = resumo[
         "Percentual desembolsado"
     ].clip(lower=0.0, upper=1.0)
+    resumo["Valor restante visual"] = resumo[
+        "Valor a Desembolsar"
+    ].clip(lower=0.0)
+    resumo["Valor restante em milhões"] = (
+        resumo["Valor restante visual"] / 1_000_000
+    )
+    resumo["Percentual restante visual"] = (
+        resumo["Valor restante visual"]
+        .div(resumo["Valor Global"].where(resumo["Valor Global"] != 0))
+        .fillna(0.0)
+        .clip(lower=0.0, upper=1.0)
+    )
 
     def moeda_curta(valor):
         valor = float(valor or 0)
@@ -15161,6 +15343,9 @@ def criar_grafico_convenentes_transferencias(
             f"{formatar_percentual_brl(linha['Percentual desembolsado'])}"
         ),
         axis=1,
+    )
+    resumo["Texto restante"] = resumo["Valor restante visual"].map(
+        moeda_curta
     )
     resumo["Hover global"] = resumo["Valor Global"].map(formatar_moeda_brl)
     resumo["Hover desembolsado"] = resumo["Valor Desembolsado"].map(
@@ -15192,6 +15377,8 @@ def criar_grafico_convenentes_transferencias(
     if modo == "percentual":
         eixo_total = [100.0] * len(resumo)
         eixo_repassado = resumo["Percentual visual"] * 100
+        eixo_restante = resumo["Percentual restante visual"] * 100
+        base_restante = eixo_repassado
         texto_total = resumo["Texto global"].map(
             lambda valor: f"Global: {valor}"
         )
@@ -15206,6 +15393,17 @@ def criar_grafico_convenentes_transferencias(
             ),
             axis=1,
         )
+        texto_restante = resumo.apply(
+            lambda linha: (
+                "Quitado"
+                if linha["Valor restante visual"] == 0
+                else (
+                    f"{formatar_percentual_brl(linha['Percentual restante visual'])}"
+                    " restante"
+                )
+            ),
+            axis=1,
+        )
         nome_total = "Total da parceria (100%)"
         titulo_eixo = "Execução financeira"
         configuracao_eixo = {
@@ -15216,8 +15414,11 @@ def criar_grafico_convenentes_transferencias(
     else:
         eixo_total = resumo["Valor global em milhões"]
         eixo_repassado = resumo["Valor desembolsado em milhões"]
+        eixo_restante = resumo["Valor restante em milhões"]
+        base_restante = eixo_repassado
         texto_total = resumo["Texto global"]
         texto_repassado = resumo["Texto desembolsado"]
+        texto_restante = resumo["Texto restante"]
         nome_total = "Valor global"
         titulo_eixo = "Valores (R$ milhões)"
         configuracao_eixo = {"rangemode": "tozero"}
@@ -15232,7 +15433,7 @@ def criar_grafico_convenentes_transferencias(
             width=0.96,
             marker={
                 "color": "#D6E7FF",
-                "line": {"color": "#1351B4", "width": 1.2},
+                "line": {"color": COR_CIDADANIA_AZUL, "width": 1.2},
             },
             text=texto_total,
             textposition="outside",
@@ -15254,10 +15455,36 @@ def criar_grafico_convenentes_transferencias(
             orientation="h",
             width=0.74,
             marker={
-                "color": "#168821",
-                "line": {"color": "#0B6415", "width": 0.8},
+                "color": COR_CIDADANIA_VERDE,
+                "line": {"color": COR_CIDADANIA_VERDE_ESCURO, "width": 0.8},
             },
             text=texto_repassado,
+            textposition="auto",
+            textfont={
+                "size": 15,
+                "family": "Arial, sans-serif",
+            },
+            cliponaxis=False,
+            customdata=dados_hover,
+            hovertemplate=hover_completo,
+        )
+    )
+    figura.add_trace(
+        go.Bar(
+            name="A desembolsar",
+            x=eixo_restante,
+            base=base_restante,
+            y=resumo["Convenente / OSC"],
+            orientation="h",
+            width=0.74,
+            marker={
+                "color": COR_CIDADANIA_VERMELHO,
+                "line": {
+                    "color": COR_CIDADANIA_VERMELHO_ESCURO,
+                    "width": 0.8,
+                },
+            },
+            text=texto_restante,
             textposition="auto",
             textfont={
                 "size": 15,
