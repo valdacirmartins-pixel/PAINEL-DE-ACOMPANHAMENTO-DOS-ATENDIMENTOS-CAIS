@@ -845,6 +845,237 @@ app.index_string = """
         {%favicon%}
         {%css%}
         <style>
+            :root {
+                --menu-lateral-fechado: 78px;
+                --menu-lateral-aberto: 292px;
+                --menu-lateral-transicao: 260ms cubic-bezier(0.22, 1, 0.36, 1);
+            }
+            #navbar-container {
+                position: fixed;
+                inset: 0 auto 0 0;
+                z-index: 1050;
+                width: var(--menu-lateral-fechado);
+                height: 100vh;
+                overflow: hidden;
+                background: linear-gradient(
+                    165deg,
+                    #071d41 0%,
+                    #0c326f 42%,
+                    #116b37 76%,
+                    #168821 100%
+                );
+                border-right: 4px solid #d32f2f;
+                box-shadow: 8px 0 28px rgba(7, 29, 65, 0.18);
+                transition: width var(--menu-lateral-transicao);
+            }
+            #navbar-container:empty {
+                display: none;
+            }
+            #page-content {
+                margin-left: var(--menu-lateral-fechado);
+                transition: margin-left var(--menu-lateral-transicao);
+            }
+            #navbar-container:empty ~ #page-content {
+                margin-left: 0;
+            }
+            #page-content > .container-fluid {
+                padding-top: 1.75rem;
+            }
+            .menu-lateral {
+                display: flex;
+                flex-direction: column;
+                width: var(--menu-lateral-aberto);
+                height: 100%;
+                min-height: 100vh;
+                color: #ffffff;
+            }
+            .menu-lateral-topo {
+                display: flex;
+                align-items: center;
+                min-height: 82px;
+                padding: 14px 14px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+            }
+            .botao-menu-lateral {
+                display: inline-flex;
+                flex: 0 0 46px;
+                align-items: center;
+                justify-content: center;
+                width: 46px;
+                height: 46px;
+                padding: 0;
+                color: #ffffff !important;
+                background: rgba(255, 255, 255, 0.11) !important;
+                border: 1px solid rgba(255, 255, 255, 0.25) !important;
+                border-radius: 14px !important;
+                box-shadow: none !important;
+                transition: transform 180ms ease, background-color 180ms ease;
+            }
+            .botao-menu-lateral:hover,
+            .botao-menu-lateral:focus {
+                transform: scale(1.04);
+                background: rgba(255, 255, 255, 0.20) !important;
+            }
+            .marca-menu-lateral {
+                display: flex;
+                align-items: center;
+                min-width: 0;
+                margin-left: 14px;
+                color: #ffffff;
+                text-decoration: none;
+            }
+            .marca-menu-lateral:hover {
+                color: #ffffff;
+            }
+            .marca-menu-lateral-icone {
+                margin-right: 11px;
+                color: #ffffff;
+                font-size: 1.25rem;
+            }
+            .marca-menu-lateral-texto,
+            .rotulo-menu-lateral {
+                max-width: 0;
+                overflow: hidden;
+                opacity: 0;
+                white-space: nowrap;
+                transform: translateX(-7px);
+                transition:
+                    max-width var(--menu-lateral-transicao),
+                    opacity 160ms ease,
+                    transform var(--menu-lateral-transicao);
+            }
+            .marca-menu-lateral-texto {
+                font-size: 1rem;
+                font-weight: 700;
+                letter-spacing: 0.1px;
+            }
+            .menu-lateral-links {
+                display: flex;
+                flex: 1 1 auto;
+                flex-direction: column;
+                gap: 5px;
+                padding: 15px 11px 18px;
+                overflow-y: auto;
+                overflow-x: hidden;
+                scrollbar-width: thin;
+                scrollbar-color: rgba(255, 255, 255, 0.30) transparent;
+            }
+            .menu-link-lateral {
+                position: relative;
+                display: flex;
+                flex: 0 0 auto;
+                align-items: center;
+                width: calc(var(--menu-lateral-aberto) - 26px);
+                min-height: 49px;
+                padding: 9px 13px;
+                color: rgba(255, 255, 255, 0.88);
+                border: 1px solid transparent;
+                border-radius: 14px;
+                text-decoration: none;
+                transition:
+                    color 170ms ease,
+                    background-color 170ms ease,
+                    border-color 170ms ease,
+                    transform 170ms ease;
+            }
+            .menu-link-lateral:hover {
+                color: #ffffff;
+                background: rgba(255, 255, 255, 0.13);
+                border-color: rgba(255, 255, 255, 0.15);
+                transform: translateX(2px);
+            }
+            .menu-link-lateral.ativo {
+                color: #071d41;
+                background: #ffffff;
+                border-color: rgba(255, 255, 255, 0.80);
+                box-shadow: 0 8px 20px rgba(3, 18, 43, 0.20);
+                font-weight: 700;
+            }
+            .menu-link-lateral.ativo::before {
+                content: "";
+                position: absolute;
+                top: 10px;
+                bottom: 10px;
+                left: -4px;
+                width: 5px;
+                border-radius: 999px;
+                background: #d32f2f;
+            }
+            .icone-menu-lateral {
+                display: inline-flex;
+                flex: 0 0 46px;
+                align-items: center;
+                justify-content: center;
+                width: 46px;
+                margin-left: -8px;
+                font-size: 1.05rem;
+            }
+            .rotulo-menu-lateral {
+                font-size: 0.94rem;
+                font-weight: 600;
+            }
+            .menu-link-sair {
+                margin-top: auto;
+                color: #ffffff;
+                background: rgba(211, 47, 47, 0.18);
+                border-color: rgba(255, 255, 255, 0.12);
+            }
+            #navbar-container.menu-aberto {
+                width: var(--menu-lateral-aberto);
+            }
+            #navbar-container.menu-aberto ~ #page-content {
+                margin-left: var(--menu-lateral-aberto);
+            }
+            #navbar-container.menu-aberto .marca-menu-lateral-texto,
+            #navbar-container.menu-aberto .rotulo-menu-lateral {
+                max-width: 210px;
+                opacity: 1;
+                transform: translateX(0);
+            }
+            @media (hover: hover) and (min-width: 769px) {
+                #navbar-container:hover {
+                    width: var(--menu-lateral-aberto);
+                }
+                #navbar-container:hover ~ #page-content {
+                    margin-left: var(--menu-lateral-aberto);
+                }
+                #navbar-container:hover .marca-menu-lateral-texto,
+                #navbar-container:hover .rotulo-menu-lateral {
+                    max-width: 210px;
+                    opacity: 1;
+                    transform: translateX(0);
+                }
+            }
+            @media (max-width: 768px) {
+                :root {
+                    --menu-lateral-fechado: 66px;
+                    --menu-lateral-aberto: min(286px, calc(100vw - 14px));
+                }
+                #navbar-container {
+                    border-right-width: 3px;
+                }
+                #navbar-container.menu-aberto ~ #page-content {
+                    margin-left: var(--menu-lateral-fechado);
+                }
+                .menu-lateral-topo {
+                    min-height: 72px;
+                    padding: 12px 8px;
+                }
+                .botao-menu-lateral {
+                    flex-basis: 44px;
+                    width: 44px;
+                    height: 44px;
+                }
+                .menu-lateral-links {
+                    padding-right: 7px;
+                    padding-left: 7px;
+                }
+                .menu-link-lateral {
+                    width: calc(var(--menu-lateral-aberto) - 18px);
+                    padding-right: 10px;
+                    padding-left: 10px;
+                }
+            }
             .somente-impressao { display: none; }
             .galeria-inicio-card {
                 background: linear-gradient(145deg, #ffffff 0%, #f5f8fc 100%);
@@ -1046,6 +1277,10 @@ app.index_string = """
                 .nao-imprimir,
                 .cabecalho-pagina-relatorio {
                     display: none !important;
+                }
+                #page-content,
+                #navbar-container ~ #page-content {
+                    margin-left: 0 !important;
                 }
                 .container-fluid {
                     width: 100% !important;
@@ -6733,81 +6968,101 @@ def criar_login_layout():
 
 
 # ============================================================
-# NAVBAR
+# MENU LATERAL
 # ============================================================
 
-navbar = dbc.Navbar(
-    dbc.Container(
+ITENS_MENU_LATERAL = [
+    ("Início", "/", "fa-solid fa-house"),
+    ("Unidades", "/unidades", "fa-solid fa-building"),
+    ("Mapa", "/mapa-unidades", "fa-solid fa-location-dot"),
+    ("Atendimentos", "/atendimentos", "fa-solid fa-handshake-angle"),
+    ("Usuários", "/usuarios", "fa-solid fa-users"),
+    ("Auditoria", "/auditoria", "fa-solid fa-clipboard-check"),
+    (
+        "Transferências",
+        "/transferencias",
+        "fa-solid fa-money-bill-transfer",
+    ),
+    ("Base de Dados", "/base", "fa-solid fa-database"),
+    ("Relatório PDF", "/relatorios", "fa-solid fa-file-pdf"),
+]
+
+
+def criar_menu_lateral(pathname="/"):
+    caminho_atual = pathname or "/"
+
+    def criar_link(rotulo, href, icone, sair=False):
+        ativo = (
+            caminho_atual == href
+            if href == "/"
+            else caminho_atual.startswith(href)
+        )
+        classes = ["menu-link-lateral"]
+        if ativo:
+            classes.append("ativo")
+        if sair:
+            classes.append("menu-link-sair")
+        return dcc.Link(
+            [
+                html.I(className=f"{icone} icone-menu-lateral"),
+                html.Span(rotulo, className="rotulo-menu-lateral"),
+            ],
+            href=href,
+            className=" ".join(classes),
+            title=rotulo,
+            refresh=False,
+        )
+
+    links = [
+        criar_link(rotulo, href, icone)
+        for rotulo, href, icone in ITENS_MENU_LATERAL
+    ]
+    links.append(
+        criar_link(
+            "Sair",
+            "/logout",
+            "fa-solid fa-arrow-right-from-bracket",
+            sair=True,
+        )
+    )
+
+    return html.Aside(
         [
-            dbc.NavbarBrand(
+            html.Div(
                 [
-                    html.Div(
+                    dbc.Button(
+                        html.I(className="fa-solid fa-bars"),
+                        id="botao-menu-lateral",
+                        className="botao-menu-lateral",
+                        color="link",
+                        title="Abrir ou fechar menu",
+                        n_clicks=0,
+                    ),
+                    dcc.Link(
                         [
                             html.I(
                                 className=(
-                                    "fa-solid "
-                                    "fa-chart-line "
-                                    "me-2"
-                                ),
-                                style={"color": "#FFFFFF"},
+                                    "fa-solid fa-chart-line "
+                                    "marca-menu-lateral-icone"
+                                )
                             ),
-                            html.Span(NOME_SISTEMA),
+                            html.Span(
+                                NOME_SISTEMA,
+                                className="marca-menu-lateral-texto",
+                            ),
                         ],
-                        className="d-flex align-items-center",
+                        href="/",
+                        className="marca-menu-lateral",
+                        refresh=False,
                     ),
                 ],
-                className="fw-bold",
-                href="/",
-                style={
-                    "color": "#FFFFFF",
-                    "fontSize": "1.12rem",
-                    "letterSpacing": "0.1px",
-                },
+                className="menu-lateral-topo",
             ),
-            dbc.Nav(
-                [
-                    dbc.NavItem(dbc.NavLink("Início", href="/", active="exact", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
-                    dbc.NavItem(dbc.NavLink("Unidades", href="/unidades", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
-                    dbc.NavItem(dbc.NavLink("Mapa", href="/mapa-unidades", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
-                    dbc.NavItem(dbc.NavLink("Atendimentos", href="/atendimentos", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
-                    dbc.NavItem(dbc.NavLink("Usuários", href="/usuarios", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
-                    dbc.NavItem(dbc.NavLink("Auditoria", href="/auditoria", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
-                    dbc.NavItem(dbc.NavLink("Transferências", href="/transferencias", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
-                    dbc.NavItem(dbc.NavLink("Base de Dados", href="/base", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
-                    dbc.NavItem(dbc.NavLink("Relatório PDF", href="/relatorios", className="px-3", style={"color": "#FFFFFF", "fontWeight": "600"})),
-                    dbc.NavItem(
-                        dbc.NavLink(
-                            [html.I(className="fa-solid fa-arrow-right-from-bracket me-2"), "Sair"],
-                            href="/logout",
-                            className="px-3",
-                            style={"color": "#FFFFFF", "fontWeight": "600"},
-                        )
-                    ),
-                ],
-                className="ms-auto flex-wrap justify-content-end",
-                navbar=True,
-            ),
+            html.Nav(links, className="menu-lateral-links"),
         ],
-        fluid=True,
-        className="px-4",
-    ),
-    dark=True,
-    className="mb-4",
-    style={
-        "background": (
-            "linear-gradient("
-            "110deg, "
-            "#168821 0%, "
-            "#116B37 26%, "
-            "#1351B4 68%, "
-            "#D32F2F 100%"
-            ")"
-        ),
-        "borderBottom": "5px solid #D32F2F",
-        "boxShadow": "0 4px 14px rgba(7, 29, 65, 0.18)",
-        "minHeight": "68px",
-    },
-)
+        className="menu-lateral",
+        **{"aria-label": "Navegação principal"},
+    )
 
 
 # ============================================================
@@ -11301,6 +11556,12 @@ app.layout = html.Div(
             data=0,
         ),
 
+        dcc.Store(
+            id="estado-menu-lateral",
+            storage_type="memory",
+            data=False,
+        ),
+
         html.Div(
             id="navbar-container",
         ),
@@ -11361,7 +11622,47 @@ def navegar_paginas(pathname, auth_refresh):
     else:
         pagina = home_layout
 
-    return navbar, pagina
+    return criar_menu_lateral(pathname), pagina
+
+
+app.clientside_callback(
+    """
+    function(n_clicks, pathname, aberto) {
+        const contexto = window.dash_clientside.callback_context;
+        const disparo = contexto && contexto.triggered.length
+            ? contexto.triggered[0].prop_id
+            : "";
+        let novoEstado = Boolean(aberto);
+
+        if (disparo.indexOf("url.pathname") === 0) {
+            novoEstado = false;
+        } else if (
+            disparo.indexOf("botao-menu-lateral.n_clicks") === 0
+            && n_clicks
+        ) {
+            novoEstado = !novoEstado;
+        }
+
+        window.requestAnimationFrame(function() {
+            const contenedor = document.getElementById("navbar-container");
+            if (contenedor) {
+                contenedor.classList.toggle("menu-aberto", novoEstado);
+            }
+            window.setTimeout(function() {
+                window.dispatchEvent(new Event("resize"));
+            }, 280);
+        });
+        return novoEstado;
+    }
+    """,
+    Output("estado-menu-lateral", "data"),
+    [
+        Input("botao-menu-lateral", "n_clicks"),
+        Input("url", "pathname"),
+    ],
+    State("estado-menu-lateral", "data"),
+    prevent_initial_call=True,
+)
 
 
 # ============================================================
@@ -15203,7 +15504,45 @@ def baixar_dashboard_pdf(
 # CALLBACKS - TRANSFERÊNCIAS VOLUNTÁRIAS
 # ============================================================
 
-def criar_grafico_regiao_transferencias(base):
+def contexto_tema_transferencias(tema_selecionado):
+    tema = str(tema_selecionado or "").strip()
+    return tema or "Todos os temas"
+
+
+def chave_tema_transferencias(tema_selecionado):
+    return normalizar_texto(
+        contexto_tema_transferencias(tema_selecionado)
+    ).replace(" ", "-")
+
+
+def adicionar_contexto_tema_transferencias(
+    figura,
+    tema_selecionado,
+    y=1.13,
+):
+    figura.add_annotation(
+        x=1,
+        y=y,
+        xref="paper",
+        yref="paper",
+        xanchor="right",
+        yanchor="bottom",
+        text=(
+            "<b>Tema:</b> "
+            f"{contexto_tema_transferencias(tema_selecionado)}"
+        ),
+        showarrow=False,
+        align="right",
+        font={"size": 13, "color": COR_CIDADANIA_AZUL_ESCURO},
+        bgcolor="rgba(234,242,255,0.92)",
+        bordercolor="rgba(19,81,180,0.24)",
+        borderwidth=1,
+        borderpad=6,
+    )
+    return figura
+
+
+def criar_grafico_regiao_transferencias(base, tema_selecionado=None):
     if base.empty:
         return figura_vazia("Nenhuma transferência corresponde aos filtros.")
 
@@ -15243,6 +15582,10 @@ def criar_grafico_regiao_transferencias(base):
     )
     figura.update_layout(
         autosize=True,
+        uirevision=(
+            "grafico-regiao-transferencias-"
+            f"{chave_tema_transferencias(tema_selecionado)}"
+        ),
         xaxis_title=None,
         yaxis_title="R$ milhões",
         legend_title_text="",
@@ -15251,10 +15594,14 @@ def criar_grafico_regiao_transferencias(base):
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
     )
-    return figura
+    return adicionar_contexto_tema_transferencias(
+        figura,
+        tema_selecionado,
+        y=1.13,
+    )
 
 
-def criar_grafico_status_transferencias(base):
+def criar_grafico_status_transferencias(base, tema_selecionado=None):
     if base.empty:
         return figura_vazia("Nenhuma transferência corresponde aos filtros.")
     status = base["Status"].replace("", "Não informado").value_counts()
@@ -15279,17 +15626,26 @@ def criar_grafico_status_transferencias(base):
     )
     figura.update_layout(
         autosize=True,
+        uirevision=(
+            "grafico-status-transferencias-"
+            f"{chave_tema_transferencias(tema_selecionado)}"
+        ),
         showlegend=False,
         margin={"l": 15, "r": 15, "t": 15, "b": 15},
         paper_bgcolor="rgba(0,0,0,0)",
     )
-    return figura
+    return adicionar_contexto_tema_transferencias(
+        figura,
+        tema_selecionado,
+        y=1.03,
+    )
 
 
 def criar_grafico_convenentes_transferencias(
     base,
     limite=15,
     modo="valores",
+    tema_selecionado=None,
 ):
     if base.empty:
         return figura_vazia("Nenhuma transferência corresponde aos filtros.")
@@ -15453,7 +15809,10 @@ def criar_grafico_convenentes_transferencias(
         yaxis_title=None,
         hovermode="closest",
         transition={"duration": 650, "easing": "cubic-in-out"},
-        uirevision=f"grafico-transferencias-{modo}",
+        uirevision=(
+            f"grafico-transferencias-{modo}-"
+            f"{chave_tema_transferencias(tema_selecionado)}"
+        ),
         legend={
             "orientation": "h",
             "yanchor": "bottom",
@@ -15488,7 +15847,11 @@ def criar_grafico_convenentes_transferencias(
         fixedrange=False,
         **configuracao_eixo,
     )
-    return figura
+    return adicionar_contexto_tema_transferencias(
+        figura,
+        tema_selecionado,
+        y=1.035,
+    )
 
 
 @app.callback(
@@ -15704,7 +16067,14 @@ def atualizar_dashboard_transferencias(
     }
     for coluna, valor in filtros.items():
         if valor:
-            filtrada = filtrada[filtrada[coluna] == valor].copy()
+            if coluna == "Tema":
+                tema_normalizado = normalizar_texto(valor)
+                filtrada = filtrada[
+                    filtrada[coluna].map(normalizar_texto)
+                    == tema_normalizado
+                ].copy()
+            else:
+                filtrada = filtrada[filtrada[coluna] == valor].copy()
 
     global_total = float(filtrada["Valor Global"].sum()) if not filtrada.empty else 0
     desembolsado = (
@@ -15789,11 +16159,18 @@ def atualizar_dashboard_transferencias(
         str(instrumentos),
         str(convenentes),
         resumo,
-        criar_grafico_regiao_transferencias(filtrada),
-        criar_grafico_status_transferencias(filtrada),
+        criar_grafico_regiao_transferencias(
+            filtrada,
+            tema_selecionado=tema,
+        ),
+        criar_grafico_status_transferencias(
+            filtrada,
+            tema_selecionado=tema,
+        ),
         criar_grafico_convenentes_transferencias(
             filtrada,
             modo=modo_grafico,
+            tema_selecionado=tema,
         ),
         tabela[colunas_tabela].fillna("").to_dict("records"),
     )
