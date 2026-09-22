@@ -2960,6 +2960,55 @@ REGRAS_UNIDADES_OPERACIONAIS_CAIS = (
 )
 
 
+def chaves_unidades_operacionais(df):
+    """Retorna uma chave única para cada uma das 22 unidades operacionais."""
+    if (
+        df is None
+        or df.empty
+        or "Nome da OSC" not in df.columns
+        or "Nome da Unidade" not in df.columns
+    ):
+        indice = df.index if isinstance(df, pd.DataFrame) else None
+        return pd.Series("", index=indice, dtype="object")
+
+    nome_osc = serie_texto(df, "Nome da OSC").map(normalizar_nome_mapa)
+    nome_unidade = serie_texto(
+        df,
+        "Nome da Unidade",
+    ).map(normalizar_nome_mapa)
+    chaves = pd.Series("", index=df.index, dtype="object")
+
+    for numero_regra, (trecho_osc, trecho_unidade) in enumerate(
+        REGRAS_UNIDADES_OPERACIONAIS_CAIS,
+        start=1,
+    ):
+        regra = nome_osc.str.contains(
+            trecho_osc,
+            regex=False,
+            na=False,
+        )
+        if trecho_unidade:
+            regra = regra & nome_unidade.str.contains(
+                trecho_unidade,
+                regex=False,
+                na=False,
+            )
+
+        # Alguns cadastros antigos do volume criaram uma segunda linha apenas
+        # com o nome fantasia. Ela continua pertencendo ao Bom Pastor e deve
+        # receber a mesma chave operacional.
+        if trecho_unidade == "ze bolo flo":
+            regra = regra | nome_unidade.str.contains(
+                "ze bolo flo",
+                regex=False,
+                na=False,
+            )
+
+        chaves.loc[regra] = f"unidade-operacional-{numero_regra:02d}"
+
+    return chaves
+
+
 def mascara_unidades_ignoradas(df):
     if df is None or df.empty:
         indice = df.index if isinstance(df, pd.DataFrame) else None
@@ -3005,26 +3054,7 @@ def mascara_unidades_em_funcionamento(df):
     # Quando o cadastro possui os nomes da OSC e da unidade, a relação
     # operacional confirmada prevalece sobre fases antigas salvas no volume.
     if "Nome da OSC" in df.columns and "Nome da Unidade" in df.columns:
-        nome_osc = serie_texto(df, "Nome da OSC").map(normalizar_nome_mapa)
-        nome_unidade = serie_texto(
-            df,
-            "Nome da Unidade",
-        ).map(normalizar_nome_mapa)
-        confirmadas = pd.Series(False, index=df.index, dtype=bool)
-        for trecho_osc, trecho_unidade in REGRAS_UNIDADES_OPERACIONAIS_CAIS:
-            regra = nome_osc.str.contains(
-                trecho_osc,
-                regex=False,
-                na=False,
-            )
-            if trecho_unidade:
-                regra = regra & nome_unidade.str.contains(
-                    trecho_unidade,
-                    regex=False,
-                    na=False,
-                )
-            confirmadas = confirmadas | regra
-        return confirmadas
+        return chaves_unidades_operacionais(df).ne("")
 
     fase = (
         serie_texto(df, "Fase").map(normalizar_nome_mapa)
@@ -3069,11 +3099,40 @@ def mascara_unidades_com_registros_cais(df):
 
 
 def mascara_unidades_contabilizadas(df):
-    """Conta somente unidades operacionais que já possuem registros."""
-    return (
+    """Marca uma única linha por unidade operacional que possua registros."""
+    candidatas = (
         mascara_unidades_em_funcionamento(df)
         & mascara_unidades_com_registros_cais(df)
     )
+    if df is None or df.empty or not bool(candidatas.any()):
+        return candidatas
+
+    chaves = chaves_unidades_operacionais(df)
+    if not bool(chaves.ne("").any()):
+        return candidatas
+
+    atendimentos = pd.to_numeric(
+        df.get("Atendimentos CAIS", 0),
+        errors="coerce",
+    ).fillna(0)
+    resultado = pd.Series(False, index=df.index, dtype=bool)
+    ordem = {indice: posicao for posicao, indice in enumerate(df.index)}
+
+    for chave in chaves[candidatas & chaves.ne("")].unique():
+        indices = list(df.index[candidatas & chaves.eq(chave)])
+        melhor_indice = max(
+            indices,
+            key=lambda indice: (
+                float(atendimentos.loc[indice]),
+                -ordem[indice],
+            ),
+        )
+        resultado.loc[melhor_indice] = True
+
+    # Mantém o comportamento anterior para uma eventual linha operacional que
+    # não possua chave oficial (somente em estruturas legadas sem identificação).
+    resultado = resultado | (candidatas & chaves.eq(""))
+    return resultado
 
 
 def contar_unidades_em_funcionamento(df):
@@ -3568,6 +3627,79 @@ def padronizar_base_unidades_mapa(df):
                     if parte.strip()
                 )
             )
+
+        # Consolida qualquer linha duplicada de Zé Bolo Flô na unidade oficial
+        # do Centro de Promoções Humanas Bom Pastor. A correção ocorre durante
+        # a leitura, portanto também alcança cadastros antigos salvos no volume.
+        identidade_bolo_flo = (
+            serie_texto(resultado, "Nome da OSC")
+            + " "
+            + serie_texto(resultado, "Nome da Unidade")
+        ).map(normalizar_nome_mapa)
+        registros_bolo_flo = identidade_bolo_flo.str.contains(
+            "ze bolo flo",
+            regex=False,
+            na=False,
+        )
+        indices_bolo_flo = list(resultado.index[registros_bolo_flo])
+        if indices_bolo_flo:
+            indice_bolo_flo = max(
+                indices_bolo_flo,
+                key=lambda indice: (
+                    "centro de promocoes humanas bom pastor"
+                    in normalizar_nome_mapa(
+                        resultado.at[indice, "Nome da OSC"]
+                    ),
+                    resultado.at[indice, "Mapeável"] == "Sim",
+                    pd.notna(resultado.at[indice, "Latitude"]),
+                    pd.notna(resultado.at[indice, "Longitude"]),
+                    -int(indice),
+                ),
+            )
+            aliases_bolo_flo = [
+                (
+                    "CIDADANIA POP RUA (MT) - CENTRO DE PROMOCOES HUMANAS "
+                    "BOM PASTOR - ZE BOLO FLO"
+                ),
+                "CIDADANIA POPRUA - ZE BOLO FLO",
+                "CIDADANIA POP RUA - ZE BOLO FLO",
+            ]
+            for indice in indices_bolo_flo:
+                valor_alias_bolo_flo = resultado.at[
+                    indice,
+                    "Alias adicional",
+                ]
+                aliases_bolo_flo.extend(
+                    parte.strip()
+                    for parte in str(
+                        ""
+                        if pd.isna(valor_alias_bolo_flo)
+                        else valor_alias_bolo_flo
+                    ).split("|")
+                    if parte.strip()
+                )
+
+            resultado.at[indice_bolo_flo, "Nome da OSC"] = (
+                "CENTRO DE PROMOCOES HUMANAS BOM PASTOR-MT (CENTERBOP)"
+            )
+            resultado.at[indice_bolo_flo, "Nome da Unidade"] = (
+                "Cidadania PopRua - Zé Bolo Flô"
+            )
+            resultado.at[indice_bolo_flo, "Fase"] = "Em funcionamento"
+            resultado.at[indice_bolo_flo, "Situação"] = (
+                "Fase de Operação: Unidade(s) em Funcionamento"
+            )
+            resultado.at[indice_bolo_flo, "Alias adicional"] = "|".join(
+                dict.fromkeys(aliases_bolo_flo)
+            )
+            duplicatas_bolo_flo = [
+                indice
+                for indice in indices_bolo_flo
+                if indice != indice_bolo_flo
+            ]
+            if duplicatas_bolo_flo:
+                resultado = resultado.drop(index=duplicatas_bolo_flo)
+
         resultado = resultado.reset_index(drop=True)
     return resultado
 
