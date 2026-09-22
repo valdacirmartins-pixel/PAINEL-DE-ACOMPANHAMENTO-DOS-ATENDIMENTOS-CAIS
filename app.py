@@ -602,14 +602,14 @@ UNIDADES_MAPA_PADRAO = json.loads(r'''
     "Região": "Sudeste",
     "UF": "SP",
     "Nome da OSC": "CASA NEON CUNHA",
-    "Nome da Unidade": "Cidadania PopRua - Amanda Marfree",
+    "Nome da Unidade": "Cidadania PopRua - Brenda Lee",
     "Município": "SÃO PAULO",
     "Endereço": "Rua Almirante Lobo, 504, Ipiranga, São Paulo - SP, 04212-000",
     "Latitude": -23.590526,
     "Longitude": -46.604361,
     "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
     "Fase": "Em funcionamento",
-    "Alias adicional": "CIDADANIA POP RUA (SP) - CASA NEON CUNHA - AMANDA MARFREE|CIDADANIA POP RUA (SP) - CASA NEON CUNHA",
+    "Alias adicional": "CIDADANIA POP RUA (SP) - CASA NEON CUNHA - BRENDA LEE|CIDADANIA POP RUA (SP) - CASA NEON CUNHA|CIDADANIA POP RUA (SP) - CASA NEON CUNHA - AMANDA MARFREE",
     "Mapeável": "Sim"
   },
   {
@@ -3253,9 +3253,13 @@ def padronizar_base_unidades_mapa(df):
         resultado.loc[casa_neon, "Situação"] = (
             "Fase de Operação: Unidade(s) em Funcionamento"
         )
+        resultado.loc[casa_neon, "Nome da Unidade"] = (
+            "Cidadania PopRua - Brenda Lee"
+        )
         alias_casa_neon = (
-            "CIDADANIA POP RUA (SP) - CASA NEON CUNHA - AMANDA MARFREE"
+            "CIDADANIA POP RUA (SP) - CASA NEON CUNHA - BRENDA LEE"
             "|CIDADANIA POP RUA (SP) - CASA NEON CUNHA"
+            "|CIDADANIA POP RUA (SP) - CASA NEON CUNHA - AMANDA MARFREE"
         )
         resultado.loc[casa_neon, "Alias adicional"] = resultado.loc[
             casa_neon,
@@ -3407,13 +3411,24 @@ def padronizar_base_unidades_mapa(df):
                 "TOCANTINS (UFT) - ESPACO AROEIRA"
             ),
         )
-        confirmar_unidade_operacional(
-            "CARITAS BRASILEIRA SC",
-            "ALINE SILVA DE SALLES",
-            (
-                "CIDADANIA POP RUA (SC) - CARITAS BRASILEIRA (SC) 1 - "
-                "ALINE SILVA DE SALLES"
-            ),
+        # Aline Silva de Salles permanece no cadastro e recebe seus registros,
+        # mas não integra a contagem operacional.
+        aline_silva = (
+            nome_osc.str.contains(
+                "caritas brasileira sc",
+                regex=False,
+                na=False,
+            )
+            & nome_unidade.str.contains(
+                "aline silva de salles",
+                regex=False,
+                na=False,
+            )
+        )
+        resultado.loc[aline_silva, "Fase"] = "Em implantação"
+        resultado.loc[aline_silva, "Situação"] = (
+            "Fase de Implantação: Pendente Adequação da Infraestrutura "
+            "e/ou Contratação de Equipe Mínima"
         )
 
         # A REDUC possui mais de uma unidade na Bahia. O nome completo da
