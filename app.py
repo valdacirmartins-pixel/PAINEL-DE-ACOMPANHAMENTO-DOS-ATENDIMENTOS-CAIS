@@ -3324,6 +3324,141 @@ def padronizar_base_unidades_mapa(df):
                 )
             )
         )
+
+        # Vínculos confirmados a partir do campo "Atendido Em" da base CAIS.
+        # As regras também corrigem cadastros antigos do volume que ainda
+        # classificam unidades ativas como em implantação.
+        def confirmar_unidade_operacional(
+            trecho_osc,
+            trecho_unidade,
+            alias_cais,
+        ):
+            mascara = (
+                nome_osc.str.contains(
+                    normalizar_nome_mapa(trecho_osc),
+                    regex=False,
+                    na=False,
+                )
+                & nome_unidade.str.contains(
+                    normalizar_nome_mapa(trecho_unidade),
+                    regex=False,
+                    na=False,
+                )
+            )
+            resultado.loc[mascara, "Fase"] = "Em funcionamento"
+            resultado.loc[mascara, "Situação"] = (
+                "Fase de Operação: Unidade(s) em Funcionamento"
+            )
+            resultado.loc[mascara, "Alias adicional"] = resultado.loc[
+                mascara,
+                "Alias adicional",
+            ].map(
+                lambda valor: "|".join(
+                    dict.fromkeys(
+                        parte.strip()
+                        for parte in (
+                            ("" if pd.isna(valor) else str(valor))
+                            + "|"
+                            + alias_cais
+                        ).split("|")
+                        if parte.strip()
+                    )
+                )
+            )
+
+        confirmar_unidade_operacional(
+            "CENTRO DE PROMOCOES HUMANAS BOM PASTOR",
+            "ZE BOLO FLO",
+            (
+                "CIDADANIA POP RUA (MT) - CENTRO DE PROMOCOES HUMANAS "
+                "BOM PASTOR - ZE BOLO FLO"
+            ),
+        )
+        confirmar_unidade_operacional(
+            "ASSOCIACAO BENEFICENTE SAO PAULO APOSTOLO",
+            "SANTO ALEIXO",
+            (
+                "CIDADANIA POP RUA (PI) - ASSOCIACAO BENEFICENTE SAO "
+                "PAULO APOSTOLO - SANTO ALEIXO"
+            ),
+        )
+        confirmar_unidade_operacional(
+            "REDE BRASILEIRA DE REDUCAO DE DANOS E DIREITOS HUMANOS",
+            "CASA FRANCISCA MARIA LUCIA",
+            (
+                "CIDADANIA POP RUA (BA) - REDE BRASILEIRA DE REDUCAO DE "
+                "DANOS E DIREITOS HUMANOS 1 - REDUC - CASA FRANCISCA "
+                "MARIA LUCIA"
+            ),
+        )
+        confirmar_unidade_operacional(
+            "INSTITUTO NACIONAL DE DIREITOS HUMANOS DA POPULACAO DE RUA",
+            "JAMAICA",
+            (
+                "CIDADANIA POP RUA (PR) - INSTITUTO NACIONAL DE DIREITOS "
+                "HUMANOS DA POPULACAO DE RUA INRUA - JAMAICA"
+            ),
+        )
+        confirmar_unidade_operacional(
+            "UNIVERSIDADE FEDERAL DO TOCANTINS",
+            "ESPACO AROEIRA",
+            (
+                "CIDADANIA POP RUA (TO) - UNIVERSIDADE FEDERAL DO "
+                "TOCANTINS (UFT) - ESPACO AROEIRA"
+            ),
+        )
+        confirmar_unidade_operacional(
+            "CARITAS BRASILEIRA SC",
+            "ALINE SILVA DE SALLES",
+            (
+                "CIDADANIA POP RUA (SC) - CARITAS BRASILEIRA (SC) 1 - "
+                "ALINE SILVA DE SALLES"
+            ),
+        )
+
+        # A REDUC possui mais de uma unidade na Bahia. O nome completo da
+        # segunda unidade deve apontar para uma linha própria e nunca ser
+        # somado à Casa Francisca Maria Lúcia.
+        reduc_generica = (
+            nome_osc.str.contains(
+                "rede brasileira de reducao de danos e direitos humanos",
+                regex=False,
+                na=False,
+            )
+            & nome_unidade.map(valor_generico_mapa)
+        )
+        indices_reduc_generica = list(resultado.index[reduc_generica])
+        if indices_reduc_generica:
+            indice_reduc_2 = max(
+                indices_reduc_generica,
+                key=lambda indice: (
+                    resultado.at[indice, "Mapeável"] == "Sim",
+                    -int(indice),
+                ),
+            )
+            alias_reduc_2 = (
+                "CIDADANIA POP RUA (BA) - REDE BRASILEIRA DE REDUCAO DE "
+                "DANOS E DIREITOS HUMANOS 2 - REDUC - NOME FANTASIA"
+            )
+            valor_alias_reduc_2 = resultado.at[
+                indice_reduc_2,
+                "Alias adicional",
+            ]
+            resultado.at[indice_reduc_2, "Alias adicional"] = "|".join(
+                dict.fromkeys(
+                    parte.strip()
+                    for parte in (
+                        (
+                            ""
+                            if pd.isna(valor_alias_reduc_2)
+                            else str(valor_alias_reduc_2)
+                        )
+                        + "|"
+                        + alias_reduc_2
+                    ).split("|")
+                    if parte.strip()
+                )
+            )
         resultado = resultado.reset_index(drop=True)
     return resultado
 
