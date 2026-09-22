@@ -607,9 +607,9 @@ UNIDADES_MAPA_PADRAO = json.loads(r'''
     "Endereço": "Rua Almirante Lobo, 504, Ipiranga, São Paulo - SP, 04212-000",
     "Latitude": -23.590526,
     "Longitude": -46.604361,
-    "Situação": "Fase de Implantação: Pendente Adequação da Infraestrutura e/ou Contratação de Equipe Mínima",
-    "Fase": "Em implantação",
-    "Alias adicional": "",
+    "Situação": "Fase de Operação: Unidade(s) em Funcionamento",
+    "Fase": "Em funcionamento",
+    "Alias adicional": "CIDADANIA POP RUA (SP) - CASA NEON CUNHA - AMANDA MARFREE|CIDADANIA POP RUA (SP) - CASA NEON CUNHA",
     "Mapeável": "Sim"
   },
   {
@@ -2880,21 +2880,12 @@ def normalizar_nome_mapa(texto):
     return re.sub(r"\s+", " ", texto).strip()
 
 
-# Unidades que não devem participar dos indicadores do painel.
-# A regra também funciona quando OSC e unidade chegam em colunas separadas.
+# Entradas exclusivamente administrativas/teste que nunca devem participar
+# dos indicadores. As unidades de atendimento permanecem na base e só entram
+# na contagem operacional quando possuírem registros do CAIS.
 UNIDADES_IGNORADAS_CAIS = (
     "CIDADANIA POP RUA (DF) - Administração Teste",
     "Cidadania Pop Rua: CAIS + PAR (administrativo)",
-    "CARITAS BRASILEIRA (SC) 1 - ALINE SILVA DE SALLES",
-    (
-        "UNIVERSIDADE FEDERAL DO RIO DE JANEIRO (UFRJ) 4 - "
-        "ESPACO DA DIGNIDADE"
-    ),
-    (
-        "ASSOCIACAO DE DESENVOLVIMENTO HUMANO E FOMENTO CULTURAL "
-        "(NUCLEO PERIFERICO) - NOME FANTASIA"
-    ),
-    "INSTITUTO BECEI 2 - CARLINHOS ARQUINO",
 )
 
 REGRAS_UNIDADES_IGNORADAS_CAIS = tuple(
@@ -2902,16 +2893,6 @@ REGRAS_UNIDADES_IGNORADAS_CAIS = tuple(
     for termos in (
         ("Administração Teste",),
         ("CAIS PAR administrativo",),
-        ("CARITAS BRASILEIRA SC", "ALINE SILVA DE SALLES"),
-        (
-            "UNIVERSIDADE FEDERAL DO RIO DE JANEIRO UFRJ",
-            "ESPACO DA DIGNIDADE",
-        ),
-        (
-            "ASSOCIACAO DE DESENVOLVIMENTO HUMANO E FOMENTO CULTURAL "
-            "NUCLEO PERIFERICO",
-        ),
-        ("INSTITUTO BECEI", "CARLINHOS ARQUINO"),
     )
 )
 
@@ -2997,8 +2978,30 @@ def mascara_unidades_em_funcionamento(df):
     return operacional & ~indicacao_negativa
 
 
+def mascara_unidades_com_registros_cais(df):
+    """Marca unidades que possuem ao menos um atendimento CAIS vinculado."""
+    if df is None or df.empty:
+        indice = df.index if isinstance(df, pd.DataFrame) else None
+        return pd.Series(False, index=indice, dtype=bool)
+    if "Atendimentos CAIS" not in df.columns:
+        return pd.Series(False, index=df.index, dtype=bool)
+    atendimentos = pd.to_numeric(
+        df["Atendimentos CAIS"],
+        errors="coerce",
+    ).fillna(0)
+    return atendimentos.gt(0)
+
+
+def mascara_unidades_contabilizadas(df):
+    """Conta somente unidades operacionais que já possuem registros."""
+    return (
+        mascara_unidades_em_funcionamento(df)
+        & mascara_unidades_com_registros_cais(df)
+    )
+
+
 def contar_unidades_em_funcionamento(df):
-    return int(mascara_unidades_em_funcionamento(df).sum())
+    return int(mascara_unidades_contabilizadas(df).sum())
 
 
 def valor_generico_mapa(texto):
@@ -3231,6 +3234,45 @@ def padronizar_base_unidades_mapa(df):
     if not resultado.empty:
         resultado = resultado.drop_duplicates().reset_index(drop=True)
         resultado, _ = excluir_unidades_ignoradas(resultado)
+        # A Casa Neon Cunha já está em operação. Esta confirmação também
+        # corrige bases antigas preservadas no volume do Railway, que ainda
+        # podem trazer a unidade como "Em implantação".
+        identidade = (
+            serie_texto(resultado, "Nome da OSC")
+            + " "
+            + serie_texto(resultado, "Nome da Unidade")
+            + " "
+            + serie_texto(resultado, "Alias adicional")
+        ).map(normalizar_nome_mapa)
+        casa_neon = identidade.str.contains(
+            "casa neon cunha",
+            regex=False,
+            na=False,
+        )
+        resultado.loc[casa_neon, "Fase"] = "Em funcionamento"
+        resultado.loc[casa_neon, "Situação"] = (
+            "Fase de Operação: Unidade(s) em Funcionamento"
+        )
+        alias_casa_neon = (
+            "CIDADANIA POP RUA (SP) - CASA NEON CUNHA - AMANDA MARFREE"
+            "|CIDADANIA POP RUA (SP) - CASA NEON CUNHA"
+        )
+        resultado.loc[casa_neon, "Alias adicional"] = resultado.loc[
+            casa_neon,
+            "Alias adicional",
+        ].map(
+            lambda valor: "|".join(
+                dict.fromkeys(
+                    parte.strip()
+                    for parte in (
+                        ("" if pd.isna(valor) else str(valor))
+                        + "|"
+                        + alias_casa_neon
+                    ).split("|")
+                    if parte.strip()
+                )
+            )
+        )
         resultado = resultado.reset_index(drop=True)
     return resultado
 
@@ -3949,7 +3991,7 @@ def resumo_regional_dashboard(unidades):
         & base["Longitude"].notna()
     ).astype(int)
     base["Unidade em funcionamento"] = (
-        mascara_unidades_em_funcionamento(base).astype(int)
+        mascara_unidades_contabilizadas(base).astype(int)
     )
     base["Atendimentos CAIS"] = pd.to_numeric(
         base["Atendimentos CAIS"],
@@ -4188,7 +4230,7 @@ def criar_grafico_regional_dashboard(unidades):
     figura.update_layout(
         autosize=True,
         showlegend=False,
-        xaxis_title="Unidades em funcionamento",
+        xaxis_title="Unidades em funcionamento com dados",
         yaxis_title=None,
         margin={"l": 15, "r": 45, "t": 15, "b": 45},
         height=None,
@@ -4434,7 +4476,7 @@ def construir_previa_dashboard_relatorio(
                 [
                     dbc.Col(
                         criar_card_dashboard_relatorio(
-                            "Unidades em funcionamento",
+                            "Unidades em funcionamento com dados",
                             contar_unidades_em_funcionamento(unidades),
                             "fa-solid fa-building", "#168821",
                         ),
@@ -4491,7 +4533,7 @@ def construir_previa_dashboard_relatorio(
                             dbc.CardBody(
                                 [
                                     html.H5(
-                                        "Unidades em funcionamento por região",
+                                        "Unidades em funcionamento com dados por região",
                                         className="fw-bold mb-2",
                                     ),
                                     dcc.Graph(
@@ -4901,7 +4943,7 @@ def gerar_pdf_dashboard_bytes(
     cards = [
         card_pdf(
             contar_unidades_em_funcionamento(unidades),
-            "Unidades em funcionamento",
+            "Unidades em funcionamento com dados",
         ),
         card_pdf(pontos, "Pontos no mapa"),
         card_pdf(metricas.get("total", 0), "Atendimentos únicos"),
@@ -5247,7 +5289,7 @@ def gerar_pdf_dashboard_bytes(
     desenho_barras.add(
         String(
             16, altura_barras - 22,
-            "Unidades em funcionamento por região",
+            "Unidades em funcionamento com dados por região",
             fontName="Helvetica-Bold",
             fontSize=11,
             fillColor=colors.HexColor("#071D41"),
@@ -5298,7 +5340,10 @@ def gerar_pdf_dashboard_bytes(
     desenho_barras.add(
         String(
             16, 45,
-            f"Total em funcionamento: {numero(total_unidades)} unidade(s)",
+            (
+                "Total em funcionamento com dados: "
+                f"{numero(total_unidades)} unidade(s)"
+            ),
             fontName="Helvetica-Bold",
             fontSize=9,
             fillColor=colors.HexColor("#071D41"),
@@ -7547,7 +7592,7 @@ home_layout = dbc.Container(
             [
                 dbc.Col(
                     criar_card(
-                        "Unidades",
+                        "Unidades em funcionamento com dados",
                         "0",
                         "fa-solid fa-building",
                         "card-unidades",
@@ -10497,7 +10542,7 @@ mapa_unidades_layout = dbc.Container(
             [
                 dbc.Col(
                     criar_card(
-                        "Unidades em funcionamento",
+                        "Unidades em funcionamento com dados",
                         "0",
                         "fa-solid fa-building",
                         "card-registros-mapa",
@@ -10582,7 +10627,10 @@ mapa_unidades_layout = dbc.Container(
                                         id="metrica-regional-mapa",
                                         options=[
                                             {
-                                                "label": "Unidades em funcionamento",
+                                                "label": (
+                                                    "Unidades em funcionamento "
+                                                    "com dados"
+                                                ),
                                                 "value": "unidades",
                                             },
                                             {
@@ -12420,6 +12468,10 @@ def limpar_filtros_home(
             "agrupamento-home",
             "value",
         ),
+        Input(
+            "dados-unidades-mapa",
+            "data",
+        ),
     ],
 )
 def atualizar_home(
@@ -12430,6 +12482,7 @@ def atualizar_home(
     data_inicial,
     data_final,
     agrupamento,
+    dados_unidades_mapa,
 ):
     if not dados_cais:
         vazio = figura_vazia()
@@ -12475,6 +12528,30 @@ def atualizar_home(
     metricas = calcular_metricas(
         df_filtrado
     )
+
+    # O indicador da página inicial segue a mesma regra do mapa e do PDF:
+    # a unidade precisa estar em funcionamento e possuir registros no recorte.
+    try:
+        base_unidades = pd.read_json(
+            io.StringIO(dados_unidades_mapa),
+            orient="split",
+        )
+        base_unidades = padronizar_base_unidades_mapa(base_unidades)
+        dados_filtrados = df_filtrado.to_json(
+            orient="split",
+            force_ascii=False,
+            date_format="iso",
+        )
+        unidades_integradas, _ = consolidar_atendimentos_no_mapa(
+            base_unidades,
+            dados_filtrados,
+        )
+        metricas["unidades"] = contar_unidades_em_funcionamento(
+            unidades_integradas
+        )
+    except Exception:
+        # Mantém o painel utilizável se o cadastro geográfico estiver inválido.
+        metricas["unidades"] = 0
 
     colunas = localizar_colunas(
         df_filtrado
@@ -14989,7 +15066,7 @@ def atualizar_resumo_regional_mapa(
         & filtrada["Longitude"].notna()
     ).astype(int)
     filtrada["Unidade em funcionamento"] = (
-        mascara_unidades_em_funcionamento(filtrada).astype(int)
+        mascara_unidades_contabilizadas(filtrada).astype(int)
     )
 
     resumo = (
@@ -15002,7 +15079,10 @@ def atualizar_resumo_regional_mapa(
     )
 
     configuracoes = {
-        "unidades": ("Unidades", "Unidades em funcionamento"),
+        "unidades": (
+            "Unidades",
+            "Unidades em funcionamento com dados",
+        ),
         "pontos": ("Pontos", "Pontos mapeáveis"),
         "atendimentos": ("Atendimentos", "Atendimentos CAIS"),
     }
