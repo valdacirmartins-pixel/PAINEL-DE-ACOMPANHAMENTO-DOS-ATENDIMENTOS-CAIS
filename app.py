@@ -4569,9 +4569,14 @@ def preparar_dados_relatorio_sem_duplicidades(unidades, atendimentos):
 
 
 def criar_mapa_dashboard_relatorio(unidades):
-    pontos = unidades[
-        unidades["Latitude"].notna()
-        & unidades["Longitude"].notna()
+    # Mantém o mapa do relatório coerente com a aba Mapa: exibe somente
+    # unidades operacionais com registros, uma vez por chave canônica.
+    unidades_contabilizadas = unidades.loc[
+        mascara_unidades_contabilizadas(unidades)
+    ].copy()
+    pontos = unidades_contabilizadas[
+        unidades_contabilizadas["Latitude"].notna()
+        & unidades_contabilizadas["Longitude"].notna()
     ].copy()
     if pontos.empty:
         return figura_vazia("Nenhuma unidade com coordenadas no recorte")
@@ -4758,12 +4763,15 @@ def construir_previa_dashboard_relatorio(
         "usuarios": 0,
         "pendencias": 0,
     }
+    unidades_contabilizadas = unidades.loc[
+        mascara_unidades_contabilizadas(unidades)
+    ] if not unidades.empty else unidades
     pontos = int(
         (
-            unidades["Latitude"].notna()
-            & unidades["Longitude"].notna()
+            unidades_contabilizadas["Latitude"].notna()
+            & unidades_contabilizadas["Longitude"].notna()
         ).sum()
-    ) if not unidades.empty else 0
+    ) if not unidades_contabilizadas.empty else 0
     resumo_regional = resumo_regional_dashboard(unidades)
     tabela_unidades = unidades.copy()
     if not tabela_unidades.empty:
@@ -5313,12 +5321,15 @@ def gerar_pdf_dashboard_bytes(
         "usuarios": 0,
         "pendencias": 0,
     }
+    unidades_contabilizadas = unidades.loc[
+        mascara_unidades_contabilizadas(unidades)
+    ] if not unidades.empty else unidades
     pontos = int(
         (
-            unidades["Latitude"].notna()
-            & unidades["Longitude"].notna()
+            unidades_contabilizadas["Latitude"].notna()
+            & unidades_contabilizadas["Longitude"].notna()
         ).sum()
-    ) if not unidades.empty else 0
+    ) if not unidades_contabilizadas.empty else 0
     resumo_regional = resumo_regional_dashboard(unidades)
 
     def card_pdf(valor, rotulo):
