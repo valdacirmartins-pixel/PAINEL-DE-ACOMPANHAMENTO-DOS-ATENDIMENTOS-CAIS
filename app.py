@@ -679,7 +679,7 @@ UNIDADES_MAPA_PADRAO = json.loads(r'''
     "Longitude": -43.336296,
     "Situação": "Fase de Operação: Unidade(s) em Funcionamento Parcial",
     "Fase": "Em funcionamento parcial",
-    "Alias adicional": "",
+    "Alias adicional": "CIDADANIA POP RUA (RJ) - UNIVERSIDADE FEDERAL DO RIO DE JANEIRO (UFRJ) 4 - ESPACO DA DIGNIDADE",
     "Mapeável": "Sim"
   },
   {
@@ -3268,6 +3268,57 @@ def padronizar_base_unidades_mapa(df):
                         ("" if pd.isna(valor) else str(valor))
                         + "|"
                         + alias_casa_neon
+                    ).split("|")
+                    if parte.strip()
+                )
+            )
+        )
+
+        # O CAIS identifica esta unidade pelo nome completo com "UFRJ 4",
+        # enquanto o cadastro geográfico usa o nome fantasia. A regra abaixo
+        # preserva o vínculo e o status mesmo em bases antigas do volume.
+        nome_osc = serie_texto(resultado, "Nome da OSC").map(
+            normalizar_nome_mapa
+        )
+        nome_unidade = serie_texto(resultado, "Nome da Unidade").map(
+            normalizar_nome_mapa
+        )
+        espaco_dignidade = (
+            nome_osc.str.contains(
+                "universidade federal do rio de janeiro",
+                regex=False,
+                na=False,
+            )
+            & nome_unidade.str.contains(
+                "espaco da dignidade",
+                regex=False,
+                na=False,
+            )
+        )
+        resultado.loc[espaco_dignidade, "Fase"] = (
+            "Em funcionamento parcial"
+        )
+        resultado.loc[espaco_dignidade, "Situação"] = (
+            "Fase de Operação: Unidade(s) em Funcionamento Parcial"
+        )
+        alias_espaco_dignidade = (
+            "CIDADANIA POP RUA (RJ) - UNIVERSIDADE FEDERAL DO RIO DE "
+            "JANEIRO (UFRJ) 4 - ESPACO DA DIGNIDADE"
+        )
+        resultado.loc[
+            espaco_dignidade,
+            "Alias adicional",
+        ] = resultado.loc[
+            espaco_dignidade,
+            "Alias adicional",
+        ].map(
+            lambda valor: "|".join(
+                dict.fromkeys(
+                    parte.strip()
+                    for parte in (
+                        ("" if pd.isna(valor) else str(valor))
+                        + "|"
+                        + alias_espaco_dignidade
                     ).split("|")
                     if parte.strip()
                 )
