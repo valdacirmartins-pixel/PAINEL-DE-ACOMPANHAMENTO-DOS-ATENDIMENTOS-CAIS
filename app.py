@@ -2907,6 +2907,58 @@ COLUNAS_REFERENCIA_UNIDADE_CAIS = frozenset(
     )
 )
 
+# Relação oficial usada pelos indicadores de unidades em funcionamento.
+# A identificação é feita por OSC + unidade para impedir que unidades da
+# mesma organização ainda em implantação (como BECEI 2) sejam contabilizadas.
+REGRAS_UNIDADES_OPERACIONAIS_CAIS = (
+    ("instituto cultural e social no setor", "casa carinhosa"),
+    ("centro de promocoes humanas bom pastor", "ze bolo flo"),
+    (
+        "rede brasileira de reducao de danos e direitos humanos",
+        "casa francisca maria lucia",
+    ),
+    (
+        "associacao de desenvolvimento e estrategias sociais",
+        "espaco ades luiz sofia",
+    ),
+    ("associacao beneficente sao paulo apostolo", "santo aleixo"),
+    ("instituto de gestao de projetos sociais", "apaon"),
+    ("instituto pedro vieira", "casa irma henriqueta"),
+    ("instituto saber", ""),
+    ("universidade federal do tocantins", "espaco aroeira"),
+    (
+        "instituto federal de educacao ciencia e tecnologia de minas gerais",
+        "anyky lima",
+    ),
+    (
+        "instituto federal de educacao ciencia e tecnologia de minas gerais",
+        "sissy kelly",
+    ),
+    ("associacao rede rua", "irma alberta"),
+    ("associacao rede rua", "regina e ivete"),
+    ("instituto becei", "sos rua"),
+    ("casa neon cunha", "brenda lee"),
+    ("universidade federal do rio de janeiro", "espaco da dignidade"),
+    ("associacao maos invisiveis", "casa da vo"),
+    (
+        "fundacao solidariedade de formacao e capacitacao de trabalhadores",
+        "maribel",
+    ),
+    (
+        "fundacao solidariedade de formacao e capacitacao de trabalhadores",
+        "rodrigo",
+    ),
+    (
+        "fundacao solidariedade de formacao e capacitacao de trabalhadores",
+        "rita de cassia",
+    ),
+    ("caritas brasileira sc", "celso luiz pereira"),
+    (
+        "instituto nacional de direitos humanos da populacao de rua inrua",
+        "jamaica",
+    ),
+)
+
 
 def mascara_unidades_ignoradas(df):
     if df is None or df.empty:
@@ -2949,6 +3001,30 @@ def mascara_unidades_em_funcionamento(df):
     if df is None or df.empty:
         indice = df.index if isinstance(df, pd.DataFrame) else None
         return pd.Series(False, index=indice, dtype=bool)
+
+    # Quando o cadastro possui os nomes da OSC e da unidade, a relação
+    # operacional confirmada prevalece sobre fases antigas salvas no volume.
+    if "Nome da OSC" in df.columns and "Nome da Unidade" in df.columns:
+        nome_osc = serie_texto(df, "Nome da OSC").map(normalizar_nome_mapa)
+        nome_unidade = serie_texto(
+            df,
+            "Nome da Unidade",
+        ).map(normalizar_nome_mapa)
+        confirmadas = pd.Series(False, index=df.index, dtype=bool)
+        for trecho_osc, trecho_unidade in REGRAS_UNIDADES_OPERACIONAIS_CAIS:
+            regra = nome_osc.str.contains(
+                trecho_osc,
+                regex=False,
+                na=False,
+            )
+            if trecho_unidade:
+                regra = regra & nome_unidade.str.contains(
+                    trecho_unidade,
+                    regex=False,
+                    na=False,
+                )
+            confirmadas = confirmadas | regra
+        return confirmadas
 
     fase = (
         serie_texto(df, "Fase").map(normalizar_nome_mapa)
@@ -3427,6 +3503,24 @@ def padronizar_base_unidades_mapa(df):
         )
         resultado.loc[aline_silva, "Fase"] = "Em implantação"
         resultado.loc[aline_silva, "Situação"] = (
+            "Fase de Implantação: Pendente Adequação da Infraestrutura "
+            "e/ou Contratação de Equipe Mínima"
+        )
+
+        becei_2_carlinhos = (
+            nome_osc.str.contains(
+                "instituto becei",
+                regex=False,
+                na=False,
+            )
+            & nome_unidade.str.contains(
+                "carlinhos arquino",
+                regex=False,
+                na=False,
+            )
+        )
+        resultado.loc[becei_2_carlinhos, "Fase"] = "Em implantação"
+        resultado.loc[becei_2_carlinhos, "Situação"] = (
             "Fase de Implantação: Pendente Adequação da Infraestrutura "
             "e/ou Contratação de Equipe Mínima"
         )
