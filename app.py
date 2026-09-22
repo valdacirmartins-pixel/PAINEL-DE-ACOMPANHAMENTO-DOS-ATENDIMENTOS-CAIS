@@ -15647,11 +15647,18 @@ def atualizar_mapa_unidades(
             | (filtrada["Nome da OSC"] == unidade)
         ].copy()
 
-    pontos = filtrada[
-        filtrada["Latitude"].notna()
-        & filtrada["Longitude"].notna()
+    # O mapa deve representar o mesmo universo exibido no card de unidades:
+    # somente unidades operacionais com registros CAIS, uma vez por chave
+    # canônica. Isso evita que cadastros auxiliares, unidades ainda sem dados
+    # ou nomes alternativos sejam contados como pontos adicionais.
+    unidades_contabilizadas = filtrada.loc[
+        mascara_unidades_contabilizadas(filtrada)
     ].copy()
-    sem_coordenadas = int(len(filtrada) - len(pontos))
+    pontos = unidades_contabilizadas[
+        unidades_contabilizadas["Latitude"].notna()
+        & unidades_contabilizadas["Longitude"].notna()
+    ].copy()
+    sem_coordenadas = int(len(unidades_contabilizadas) - len(pontos))
 
     if pontos.empty:
         figura = figura_vazia(
@@ -15800,7 +15807,7 @@ def atualizar_mapa_unidades(
         "Nomes reconhecidos no CAIS",
         "Mapeável",
     ]
-    tabela = filtrada[colunas_tabela].copy()
+    tabela = unidades_contabilizadas[colunas_tabela].copy()
     tabela["Atendimentos CAIS"] = pd.to_numeric(
         tabela["Atendimentos CAIS"],
         errors="coerce",
@@ -15808,7 +15815,7 @@ def atualizar_mapa_unidades(
 
     return (
         figura,
-        str(contar_unidades_em_funcionamento(filtrada)),
+        str(len(unidades_contabilizadas)),
         str(len(pontos)),
         str(metricas["atendimentos_vinculados"]),
         str(sem_coordenadas),
