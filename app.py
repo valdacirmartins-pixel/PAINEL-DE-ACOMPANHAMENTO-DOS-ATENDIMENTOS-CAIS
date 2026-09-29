@@ -76,6 +76,10 @@ CAMINHO_BASE_TRANSFERENCIAS = os.path.join(
     PASTA_DATA,
     "transferencias_voluntarias.json",
 )
+CAMINHO_HISTORICO_TRANSFERENCIAS = os.path.join(
+    PASTA_VOLUME_RAILWAY or PASTA_DATA,
+    "historico_transferencias.json",
+)
 
 # Cópia inicial da planilha de transferências incorporada ao app.
 # O upload na nova aba substitui esta base e mantém os dados atualizados.
@@ -90,7 +94,3 @@ TRANSFERENCIAS_PADRAO_CSV_GZIP_B64 = (
     "m6wzMs/IQ54UsCsJcWdZDufzhPSy7CHJY3guMmGUi8k7ElcPi2+Jf/rfpCAPcQ4v3yXr9JG9Gz4+zrP7PF7GROwuYTf9kZyNh73z"
     "Dpllq7ssXyYEuCOZpXdwbXalpFjHt8kCXprH8HgZezx2p3Ue38aLNxlJliReJd9m5Ey1LUOV9XPJqchtm4aBz652NdVxcD+c9gK2"
     "T4GwJYFbv4+T2FGMC1ljG10fGo6iX8iCdI7jrR5Ttvoig+uk61hsW55sVikczrIlydj+reHPDzHsfwGEVB03YuyNfH4Jcn/l91D2"
-    "SR9kcBiEbh+OyBhZ3yPTkX/jhZE/cUMQKa9BHFkhZ/MsLc5J8s0Grs64vmhRh+0CMFBMxtlDuInJf5IevCtnn3dnSVFkQPF+micp"
-    "fjQh/mq22BRw/SibpfECOXCcLd6vkTmK7DZPSB+uDbQ767l+BHeGP6/W/HIPGWzG93inzYLtBJAySoGdxXrx/mfwVOf4h6ssX8eL"
-    "5G180fMkx4Z/qlWSWbVM3eRSTVVnBPwKfJM4Pc/pZYv4NmM862w/2+4LQGwVZboh5eXv1uvKFgNs8vezNHMcCmQ3hZgaQo5Nh5pC"
-    "juFQu5CZ8MLSgS90/t5jcqwdIn/kItWng4C44yCaBHBw5l6C5gU93CI8JWebZYvsSPUdYndfRpxdFvn+A1ikg2K+BHmYvX/gwjJJ"
